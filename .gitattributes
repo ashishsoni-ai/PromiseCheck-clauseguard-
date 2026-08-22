@@ -1,0 +1,37 @@
+# Byte-identical checkouts on every platform. This is not a style preference.
+#
+# Git for Windows installs with core.autocrlf=true, which rewrites LF to CRLF on
+# checkout. Two artefacts in this repo are hashed over RAW BYTES and break silently
+# when that happens:
+#
+#   1. scripts/freeze_aut.py records sha256 of every aut-*/corpus/* file, so that the
+#      freeze answers "which policy text was frozen in", not just "which code". Under a
+#      CRLF checkout the worked example goes 4627 -> 4686 bytes and
+#      8deeef5a99cf5d84... -> f3e99a2f7164eb86..., so a reviewer verifying commitment C3
+#      against a fresh clone finds a mismatch and concludes the corpus was tampered with.
+#      A verification step that raises false alarms is worse than no verification step.
+#
+#   2. DESIGN.md 7.1 ships "URLs, fetch timestamps, content hashes and the fetcher" so a
+#      third party can check the policy corpus without us redistributing it. Those hashes
+#      have to be reproducible from a clone with sha256sum or Get-FileHash.
+#
+# The harness ingest path is already immune and does not need this: Path.read_text() does
+# universal-newline translation, segmenter.py splits with splitlines(), and normalize()
+# ends in " ".join(text.split()), which discards \r. So what follows protects the
+# raw-byte artefacts, not the clause hashes.
+
+* text=auto eol=lf
+
+# Spelled out as well as covered by the wildcard, so that editing the line above cannot
+# quietly un-pin the file types whose bytes are load-bearing.
+*.md    text eol=lf
+*.json  text eol=lf
+*.jsonl text eol=lf
+*.py    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.txt   text eol=lf
+
+# Never converted, never diffed.
+*.png binary
+*.pdf binary

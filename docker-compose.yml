@@ -25,7 +25,12 @@ services:
       # ollama is the documented default (DESIGN.md 1.4). groq is a development fallback
       # and changes what the frozen tag means, so switching it should be deliberate.
       LLM_BACKEND: ${LLM_BACKEND:-ollama}
-      OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
+      # AUT_OLLAMA_HOST, *not* OLLAMA_HOST. Ollama reads OLLAMA_HOST on the host to choose
+      # its bind address (often 0.0.0.0:11434 on Windows so a container can reach it), and
+      # interpolating that value in here would tell the client to dial 0.0.0.0 - which,
+      # inside the container, is the container. Both sides would look right and every
+      # request would 502.
+      AUT_OLLAMA_HOST: ${AUT_OLLAMA_HOST:-http://host.docker.internal:11434}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
     extra_hosts:
       # Ollama runs on the developer's machine, not in the container. Docker Desktop

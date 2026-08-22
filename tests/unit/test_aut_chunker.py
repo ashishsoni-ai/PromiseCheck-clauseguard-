@@ -18,6 +18,7 @@ harness *cannot* import it by accident.
 
 from __future__ import annotations
 
+import hashlib
 import sys
 from pathlib import Path
 
@@ -271,3 +272,51 @@ class TestTheSeparationIsStructural:
         assert isinstance(chunks[0], Chunk)
         assert not hasattr(chunks[0], "clause_id")
         assert not hasattr(chunks[0], "content_hash")
+
+
+class TestTheBakedCorpusBytesSurviveACheckout:
+    """`scripts/freeze_aut.py` hashes corpus files as RAW BYTES, so that the freeze record
+    answers "which policy text was frozen in" and not merely "which code".
+
+    That makes the bytes load-bearing, and Git for Windows ships core.autocrlf=true, which
+    rewrites LF to CRLF on checkout. Without `.gitattributes` a reviewer cloning the repo to
+    verify commitment C3 would compute a different corpus hash than the record states - the
+    worked example moves 4627 -> 4686 bytes - and reasonably conclude the snapshot was
+    tampered with. A verification step that raises false alarms is worse than none.
+
+    The harness ingest path does not need this (read_text does universal-newline translation
+    and normalize() discards \\r), which is exactly why the exposure is easy to miss.
+    """
+
+    GITATTRIBUTES = AUT_DIR.parent / ".gitattributes"
+
+    def test_line_endings_are_pinned_for_the_whole_repo(self):
+        assert self.GITATTRIBUTES.is_file(), ".gitattributes is required, not optional"
+        assert "* text=auto eol=lf" in self.GITATTRIBUTES.read_text(encoding="utf-8")
+
+    def test_markdown_is_pinned_explicitly_as_well(self):
+        """Belt and braces: the corpus is markdown, and a future edit to the wildcard
+        line should not be able to silently un-pin it."""
+        text = self.GITATTRIBUTES.read_text(encoding="utf-8")
+        assert "*.md" in text and "eol=lf" in text
+
+    def test_the_baked_corpus_has_no_carriage_returns_on_disk(self):
+        files = sorted(CORPUS_DIR.glob("*.md"))
+        assert files
+        for path in files:
+            assert b"\r" not in path.read_bytes(), f"{path.name} was checked out as CRLF"
+
+    def test_the_snapshot_is_still_byte_identical_to_the_policy_it_came_from(self):
+        """A drift here means the policy was edited without re-freezing the agent.
+
+        That IS a real scenario the harness exists to catch, but it should be staged with a
+        fixture copy - never by editing the committed snapshot, which would make every
+        historical audit row's corpus hash unverifiable.
+        """
+        policy = AUT_DIR.parent / "policies" / "acme-refunds.md"
+        baked = CORPUS_DIR / "acme-refunds.md"
+        assert (
+            hashlib.sha256(baked.read_bytes()).hexdigest()
+            == hashlib.sha256(policy.read_bytes()).hexdigest()
+        ), "aut-naive/corpus is stale relative to policies/ - re-freeze or use a fixture"
+

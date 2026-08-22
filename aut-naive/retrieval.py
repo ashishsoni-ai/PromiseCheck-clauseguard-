@@ -36,6 +36,22 @@ if TYPE_CHECKING:  # pragma: no cover
 MODEL_NAME = "BAAI/bge-small-en-v1.5"
 TOP_K = 3
 
+#: The exact Hugging Face commit of MODEL_NAME baked into the image.
+#:
+#: Pinned for the same reason the pip deps are pinned, and it is the sharper case.
+#: Commitment C3 freezes the agent by git SHA, and a git SHA does not cover the model
+#: repository. `BAAI/bge-small-en-v1.5` is a moving reference: if BAAI pushes to it, an
+#: unpinned rebuild gets different weights, so embeddings and top-k move while every
+#: tracked byte in this repo stays identical - and the audit trail blames the agent for
+#: drift that came from outside it.
+#:
+#: This MUST equal the `revision=` in the Dockerfile's model-bake layer, which is what
+#: actually downloads the weights; tests/unit/test_aut_freeze.py asserts they agree.
+#: Harvested from the built image rather than typed from the model card:
+#:   docker run --rm <image> cat \
+#:     /opt/models/models--BAAI--bge-small-en-v1.5/refs/main
+MODEL_REVISION = "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a"
+
 #: From the bge-small-en-v1.5 model card. Query side only.
 QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
 
@@ -51,19 +67,29 @@ class Embedder(Protocol):
     @property
     def name(self) -> str: ...
 
+    @property
+    def revision(self) -> str: ...
+
 
 class BGEEmbedder:
     """The real one. `sentence_transformers` is imported on construction."""
 
-    def __init__(self, model_name: str = MODEL_NAME) -> None:
+    def __init__(
+        self, model_name: str = MODEL_NAME, revision: str = MODEL_REVISION
+    ) -> None:
         from sentence_transformers import SentenceTransformer
 
         self._model_name = model_name
-        self._model = SentenceTransformer(model_name)
+        self._revision = revision
+        self._model = SentenceTransformer(model_name, revision=revision)
 
     @property
     def name(self) -> str:
         return self._model_name
+
+    @property
+    def revision(self) -> str:
+        return self._revision
 
     def encode_documents(self, texts: Sequence[str]) -> "np.ndarray":
         return self._model.encode(
@@ -139,9 +165,17 @@ class Retriever:
         Reported at `/health` alongside the freeze SHAs. The commit hash proves which
         *code* was frozen; this proves which *corpus* was baked in beside it, which is
         the other half of a claim that the agent has not moved.
+
+        The embedder's revision is folded in, not just its name. Without that, swapping
+        the model weights - the one drift a git SHA cannot see - would leave this value
+        unchanged, and a fingerprint that survives the change it exists to detect is
+        worse than none.
         """
         digest = hashlib.sha256()
-        digest.update(f"{self.embedder.name}|{self.top_k}|{self.dim}\n".encode())
+        digest.update(
+            f"{self.embedder.name}@{self.embedder.revision}"
+            f"|{self.top_k}|{self.dim}\n".encode()
+        )
         for chunk in self.chunks:
             digest.update(f"{chunk.chunk_id}:{len(chunk.text)}\n".encode())
         return "sha256:" + digest.hexdigest()

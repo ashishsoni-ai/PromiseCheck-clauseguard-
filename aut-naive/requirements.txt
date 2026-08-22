@@ -8,17 +8,94 @@
 #
 # sentence-transformers and faiss-cpu are the "(AUT only)" entries from the
 # DESIGN.md Appendix.
+#
+# ---------------------------------------------------------------------------
+# WHY EVERY VERSION IS PINNED, INCLUDING TRANSITIVE ONES
+#
+# Commitment C3 freezes the agent "by commit SHA". A SHA only freezes the code.
+# Resolve this file six weeks from now with floating versions and you get the
+# same SHA running different software: a new `transformers` changes tokenisation,
+# a new `sentence-transformers` changes pooling, and top-k retrieval moves
+# without a single tracked byte changing. The audit trail would attribute that
+# drift to the agent. So the pins are the other half of the freeze, and
+# transitive deps are pinned too - `sentence-transformers==6.0.0` does not
+# constrain `transformers` tightly enough to matter.
+#
+# These versions are NOT hand-written. They are `pip freeze` from a real build
+# of this exact Dockerfile (harvested 2026-08-22 via a throwaway
+# `clauseguard/pin-probe:tmp` image, which self-reports "(unfrozen)" because it
+# is built without the freeze ARGs). Re-harvest the same way after any
+# deliberate upgrade; never edit a version here by hand.
+#
+# Two packages are deliberately absent:
+#   torch      - installed in the Dockerfile from the PyTorch CPU index, because
+#                the resolved build is 2.13.0+cpu and that local-version segment
+#                does not exist on PyPI. Pinned there, on that line.
+#   setuptools - ships with the base image; pinning it here would reinstall
+#                build tooling as though it were a runtime dependency.
+# ---------------------------------------------------------------------------
 
-fastapi
-uvicorn[standard]
-pydantic>=2.7
-httpx
+# --- direct dependencies --------------------------------------------------
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+pydantic==2.13.4
+httpx==0.28.1
 
 # retrieval: bge-small-en-v1.5 embeddings + FAISS, top-k=3
-sentence-transformers
-faiss-cpu
+sentence-transformers==6.0.0
+faiss-cpu==1.15.0
 
 # generation backend (env-switchable: ollama default, groq fallback)
-ollama
-groq
-python-dotenv
+ollama==0.6.2
+groq==1.6.0
+python-dotenv==1.2.3
+
+# --- transitive, pinned for reproducibility -------------------------------
+# Pulled in by the above; listed so the resolve is deterministic rather than
+# "whatever the index served that day". Alphabetical, one source of truth.
+annotated-doc==0.0.5
+annotated-types==0.8.0
+anyio==4.14.2
+certifi==2026.7.22
+click==8.4.2
+distro==1.9.0
+filelock==3.32.3
+fsspec==2026.7.0
+h11==0.16.0
+hf-xet==1.6.0
+httpcore==1.0.9
+httptools==0.8.0
+huggingface_hub==1.28.0
+idna==3.19
+Jinja2==3.1.6
+joblib==1.5.3
+markdown-it-py==4.2.0
+MarkupSafe==3.0.3
+mdurl==0.1.2
+mpmath==1.3.0
+narwhals==2.25.0
+networkx==3.6.1
+numpy==2.5.2
+packaging==26.3
+pydantic_core==2.46.4
+Pygments==2.21.0
+PyYAML==6.0.3
+regex==2026.7.19
+rich==15.0.0
+safetensors==0.8.0
+scikit-learn==1.9.0
+scipy==1.18.1
+shellingham==1.5.4
+sniffio==1.3.1
+starlette==1.6.0
+sympy==1.14.0
+threadpoolctl==3.6.0
+tokenizers==0.22.2
+tqdm==4.70.0
+transformers==5.15.1
+typer==0.27.1
+typing-inspection==0.4.4
+typing_extensions==4.16.0
+uvloop==0.22.1
+watchfiles==1.2.0
+websockets==17.0.1

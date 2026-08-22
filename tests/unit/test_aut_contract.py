@@ -37,7 +37,13 @@ if str(AUT_DIR) not in sys.path:
 
 import app as aut_app  # noqa: E402
 from app import app, get_generator, get_retriever  # noqa: E402
-from backends import BackendError  # noqa: E402
+from backends import (  # noqa: E402
+    DEFAULT_GROQ_MODEL,
+    OLLAMA_HOST_ENV,
+    OLLAMA_MODEL,
+    BackendError,
+    build_generator,
+)
 from chunker import CHUNK_CHARS, OVERLAP_CHARS, Chunk  # noqa: E402
 from prompts import (  # noqa: E402
     SYSTEM_PROMPT,
@@ -48,6 +54,46 @@ from prompts import (  # noqa: E402
 from retrieval import MODEL_NAME, TOP_K, Hit  # noqa: E402
 
 REPLY = "Yes, you can absolutely return that - I'll get it sorted for you."
+
+REPO_ROOT = AUT_DIR.parent
+ENV_EXAMPLE = REPO_ROOT / ".env.example"
+COMPOSE = REPO_ROOT / "docker-compose.yml"
+
+FAMILY_TOKENS = (
+    "qwen",
+    "llama",
+    "mistral",
+    "mixtral",
+    "gemma",
+    "phi",
+    "deepseek",
+    "gpt",
+    "claude",
+)
+
+
+def family_of(model: str) -> str:
+    lowered = model.lower()
+    for token in FAMILY_TOKENS:
+        if token in lowered:
+            return token
+    raise AssertionError(
+        f"unrecognised model family in {model!r}. Add it to FAMILY_TOKENS rather than "
+        "loosening this check - DESIGN.md 1.5 depends on families being comparable."
+    )
+
+
+def env_example_models() -> dict[str, str]:
+    """The `*_MODEL` settings as `.env.example` documents them."""
+    found: dict[str, str] = {}
+    for line in ENV_EXAMPLE.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, _, value = stripped.partition("=")
+        if key.endswith("_MODEL") and value:
+            found[key] = value
+    return found
 
 
 def make_chunk(n: int, text: str | None = None) -> Chunk:
@@ -403,3 +449,70 @@ class TestThePromptIsNotRigged:
         messages = build_messages("q", [Hit(chunk=make_chunk(1), score=0.5)])
         assert "Refund window paragraph 1." in messages[0]["content"]
         assert len(messages) == 2
+
+
+class TestTheJudgeStaysInADifferentFamilyFromTheAgent:
+    """DESIGN.md 1.5: "judge model deliberately from a **different family** than the AUT",
+    repeated in the 2 step 8 role table as "Different family from AUT; span-verified".
+
+    An AUT and a judge from one family share pretraining and therefore share blind spots:
+    the judge is most likely to find a fluent over-promise reasonable exactly when the
+    agent's own priors produced it. That is grading with the marker that wrote the answer.
+    Asserted here because the constraint spans two files and a comment cannot enforce it.
+    """
+
+    def test_the_frozen_default_is_qwen(self):
+        assert family_of(OLLAMA_MODEL) == "qwen"
+
+    def test_the_groq_fallback_does_not_silently_switch_family(self):
+        """The fallback exists so the agent can run without Ollama - not so it can run as
+        a different species of model while still reporting itself as aut-naive."""
+        assert family_of(DEFAULT_GROQ_MODEL) == family_of(OLLAMA_MODEL)
+
+    @pytest.mark.parametrize(
+        "role",
+        [
+            "CLAUSEGUARD_JUDGE_MODEL",
+            "CLAUSEGUARD_EXTRACTOR_MODEL",
+            "CLAUSEGUARD_ADVERSARY_MODEL",
+        ],
+    )
+    def test_no_harness_role_shares_a_family_with_the_agent(self, role: str):
+        models = env_example_models()
+        assert role in models, f"{role} is missing from .env.example"
+        assert family_of(models[role]) != family_of(OLLAMA_MODEL)
+
+    def test_the_fallback_is_not_the_adversary_model_itself(self):
+        """An adversary writing probes against itself is not adversarial, it is a mirror."""
+        adversary = env_example_models()["CLAUSEGUARD_ADVERSARY_MODEL"]
+        assert not adversary.endswith(DEFAULT_GROQ_MODEL)
+
+
+class TestTheOllamaHostVariableDoesNotCollide:
+    """Ollama reads `OLLAMA_HOST` to decide what address its *server* binds to. On Windows
+    it has to be `0.0.0.0:11434` before a container can reach it at all - and that value is
+    meaningless as a client target, because inside the container `0.0.0.0` is the container.
+    Reusing the name would make both sides look correct while every request 502s.
+    """
+
+    def test_the_client_variable_is_not_ollama_s_own_bind_variable(self):
+        assert OLLAMA_HOST_ENV == "AUT_OLLAMA_HOST"
+        assert OLLAMA_HOST_ENV != "OLLAMA_HOST"
+
+    def test_compose_passes_the_client_variable_and_defaults_to_the_host_gateway(self):
+        lines = [
+            line.strip()
+            for line in COMPOSE.read_text(encoding="utf-8").splitlines()
+            if line.strip().startswith(f"{OLLAMA_HOST_ENV}:")
+        ]
+        assert lines, f"docker-compose.yml does not pass {OLLAMA_HOST_ENV}"
+        assert "host.docker.internal:11434" in lines[0]
+
+    def test_env_example_documents_the_name_the_code_reads(self):
+        text = ENV_EXAMPLE.read_text(encoding="utf-8")
+        assert f"\n{OLLAMA_HOST_ENV}=" in text
+
+    def test_an_unknown_backend_is_refused_rather_than_defaulted(self):
+        with pytest.raises(BackendError, match="unknown LLM_BACKEND"):
+            build_generator("vllm")
+
