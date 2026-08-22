@@ -1,0 +1,15 @@
+{
+  "auts": {
+    "aut-naive": {
+      "corpus": {
+        "acme-refunds.md": "sha256:8deeef5a99cf5d849a66adbaeb28042bc58c977061e0ce91cf88922775ab628f"
+      },
+      "frozen_at": "2026-08-22T11:11:43+00:00",
+      "git_tag": "aut-naive-v1",
+      "image": "clauseguard/aut-naive:aut-naive-v1",
+      "repo_head": "bcaebf4fa9c5421425857d08314ac676a01dc3c8",
+      "tree_hash": "39be323e8b39ca0dc6fb922ff69a86352f8704ba"
+    }
+  },
+  "schema_version": 1
+}
