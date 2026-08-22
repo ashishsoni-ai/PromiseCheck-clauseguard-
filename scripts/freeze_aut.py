@@ -125,6 +125,9 @@ def write_record(aut: str, record: dict, path: Path = FREEZE_PATH) -> Path:
     path.write_text(
         json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
         encoding="utf-8",
+        # LF explicitly. This is the C3 freeze record - the one file a reviewer is most
+        # likely to hash - so it must not differ byte-for-byte with the host OS.
+        newline="\n",
     )
     return path
 

@@ -7,9 +7,13 @@ DESIGN.md 7.1 constrains this module more than it constrains most:
 
 So fetched text is cached under `policies/.cache/`, which is gitignored, while the
 things that make a fetch REPRODUCIBLE - the URL, the timestamp, and the sha256 of
-the exact bytes we parsed - travel in `LoadedSource` and end up in the committed
+the canonical text we parsed - travel in `LoadedSource` and end up in the committed
 manifest. Anyone can re-run the fetcher and compare hashes; nobody has to
 redistribute a merchant's copyrighted policy page.
+
+"Canonical" is load-bearing in that sentence, not a hedge: line endings are collapsed
+to LF before hashing so the value does not depend on the ingest route or the host OS.
+See `canonical_text`.
 
 WHY `raw_sha256` IS NOT `content_hash`
 `raw_sha256` is the full sha256 of the extracted text, unnormalised, and it
@@ -59,6 +63,8 @@ class LoadedSource:
     """
 
     text: str
+    """The policy text. LF-only by invariant - every loader runs `canonical_text`."""
+
     source: str
     fetched_at: datetime
     raw_sha256: str
@@ -70,8 +76,43 @@ class LoadedSource:
         return bool(_URL_RE.match(self.source))
 
 
+def canonical_text(text: str) -> str:
+    """Collapse CRLF and lone CR to LF. Applied by every loader before hashing.
+
+    `LoadedSource.text` is LF-only by invariant, and this is where that is enforced.
+    Three separate things go wrong without it.
+
+    1. THE HASH WOULD DEPEND ON THE INGEST ROUTE. `load_markdown` reads with universal
+       newlines, so a CRLF file on disk already arrives as LF. `load_pdf` and `load_url`
+       take whatever pypdf and trafilatura emit. The same policy text would therefore
+       produce two different `raw_sha256` values depending on which loader saw it, and
+       DESIGN.md 7.1 ships that hash as the evidence a re-fetch is reproducible.
+
+    2. THE HASH WOULD DEPEND ON THE HOST OS. `Path.write_text` translates `\\n` to the
+       platform terminator, so on Windows a cached `\\r\\n` was written as `\\r\\r\\n` and read
+       back - through universal newlines - as `\\n\\n`. An EXTRA BLANK LINE. Blank lines are
+       what the segmenter splits paragraphs on, so a cache hit could produce different
+       clause boundaries, different `clause_id`s and a different `policy_version` than the
+       cold fetch of byte-identical upstream text. That is half the key the audit trail is
+       built on, moving because of a line-ending convention.
+
+    3. THE CACHE INVARIANT WOULD BE FALSE. This module's docstring promises that deleting
+       `policies/.cache/` "must change nothing but runtime". Under (2) it changed the text.
+
+    Canonicalising STRENGTHENS the 7.1 claim rather than weakening it: a reviewer on Linux
+    and a build on Windows now agree on the hash for the same page. An upstream server
+    switching terminators is not a policy change, and should not read as one - the same
+    argument `hashing.normalize` makes one level down, at clause granularity.
+    """
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
 def raw_sha256(text: str) -> str:
-    """Full sha256 of the extracted text, for provenance. Not the clause hash."""
+    """Full sha256 of the extracted text, for provenance. Not the clause hash.
+
+    Callers pass text that has already been through `canonical_text`; see there for why
+    the line endings must be settled before this point.
+    """
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
@@ -110,7 +151,7 @@ def _cache_path(url: str) -> Path:
 def load_markdown(path: str | Path) -> LoadedSource:
     """Load a local markdown or plain-text policy file."""
     p = Path(path)
-    text = p.read_text(encoding="utf-8")
+    text = canonical_text(p.read_text(encoding="utf-8"))
     return LoadedSource(
         text=text,
         source=str(path),
@@ -138,7 +179,7 @@ def load_pdf(path: str | Path) -> LoadedSource:
     p = Path(path)
     reader = PdfReader(str(p))
     pages = [(page.extract_text() or "").strip() for page in reader.pages]
-    text = "\n\n".join(page for page in pages if page)
+    text = canonical_text("\n\n".join(page for page in pages if page))
     return LoadedSource(
         text=text,
         source=str(path),
@@ -170,7 +211,12 @@ def load_url(
     cached = (root / _cache_path(url).name) if root else None
 
     if use_cache and cached is not None and cached.exists():
-        text = cached.read_text(encoding="utf-8")
+        # newline="" disables translation on the way in, so the cache is a byte-faithful
+        # store and `canonical_text` is the single place line endings are allowed to
+        # change. `Path.read_text` grew a `newline=` parameter only in 3.12+, so this
+        # goes through `open` to stay version-agnostic.
+        with cached.open("r", encoding="utf-8", newline="") as handle:
+            text = canonical_text(handle.read())
         return LoadedSource(
             text=text,
             source=url,
@@ -200,10 +246,15 @@ def load_url(
     if not extracted or not extracted.strip():
         raise RuntimeError(f"no main text extracted from {url!r}")
 
-    text = extracted.strip()
+    text = canonical_text(extracted).strip()
     if use_cache and cached is not None:
         cached.parent.mkdir(parents=True, exist_ok=True)
-        cached.write_text(text, encoding="utf-8")
+        # newline="" so nothing is translated on the way out. Without it Windows wrote
+        # `\r\n` as `\r\r\n`, which read back as an extra blank line and moved the clause
+        # boundaries - see `canonical_text`. Belt and braces: the text is already LF by
+        # the line above, and this makes the cache incapable of reintroducing the problem.
+        with cached.open("w", encoding="utf-8", newline="") as handle:
+            handle.write(text)
 
     return LoadedSource(
         text=text,

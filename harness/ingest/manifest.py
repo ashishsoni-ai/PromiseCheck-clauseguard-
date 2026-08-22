@@ -182,6 +182,9 @@ def write_manifest(
     p.write_text(
         json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
         encoding="utf-8",
+        # LF explicitly: this file is committed evidence, and without it Windows writes
+        # CRLF while Linux writes LF, so the same manifest hashes two ways.
+        newline="\n",
     )
     return p
 

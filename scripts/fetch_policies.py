@@ -91,6 +91,9 @@ def write_lock(lock: dict, path: Path) -> Path:
     path.write_text(
         json.dumps(lock, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
         encoding="utf-8",
+        # LF explicitly, so the lock a reviewer regenerates matches the committed one
+        # byte-for-byte rather than differing on every line. See manifest.py.
+        newline="\n",
     )
     return path
 

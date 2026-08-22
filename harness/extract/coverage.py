@@ -377,6 +377,8 @@ def write_coverage(
     path.write_text(
         json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
         encoding="utf-8",
+        # LF explicitly, so this report is byte-identical on every host. See manifest.py.
+        newline="\n",
     )
     return path
 
