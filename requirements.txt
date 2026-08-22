@@ -1,0 +1,41 @@
+# Harness runtime dependencies.
+# Mirror of [project.dependencies] in pyproject.toml, kept for `pip install -r`
+# convenience and for CI images that don't build the package.
+# Source of truth: DESIGN.md "Appendix - dependency shortlist".
+#
+# sentence-transformers and faiss-cpu are intentionally absent - they are
+# "(AUT only)" per the Appendix and live in aut-*/requirements.txt, because
+# DESIGN.md 1.4 forbids shared imports between harness and agents under test.
+
+pydantic>=2.7
+instructor
+litellm
+
+langgraph
+faker
+
+langchain-text-splitters
+trafilatura
+pypdf
+
+sqlmodel
+
+httpx[http2]
+anyio
+
+fastapi
+uvicorn[standard]
+jinja2
+
+deepdiff
+rich
+
+scipy
+
+uuid6
+python-dotenv
+
+# dev / test
+pytest
+pytest-xdist
+pytest-cov

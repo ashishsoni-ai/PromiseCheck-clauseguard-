@@ -1,0 +1,44 @@
+# docker-compose - harness + aut-naive + aut-strong (DESIGN.md 1). Filled in STEP 4.
+#
+# THERE IS DELIBERATELY NO `build:` STANZA FOR THE AGENTS.
+# `docker compose build` would produce an image with the AUT_COMMIT_SHA build args unset,
+# and that image would report itself as "(unfrozen)" while looking, from the outside, exactly
+# like the frozen one. Commitment C3 (DESIGN.md 0) depends on there being one way to build an
+# agent, so images come from:
+#
+#     python scripts/freeze_aut.py aut-naive --tag aut-naive-v1 --build
+#
+# and compose only ever runs what that produced. An "image not found" error here is the
+# correct failure - it means the agent was never frozen.
+#
+# The harness itself is not a service. It runs on the host, talks to the agents over HTTP
+# only (DESIGN.md 1.4), and writing it into this file would invite a shared network alias to
+# grow into a shared import.
+
+services:
+  aut-naive:
+    image: ${AUT_NAIVE_IMAGE:-clauseguard/aut-naive:aut-naive-v1}
+    container_name: clauseguard-aut-naive
+    ports:
+      - "8001:8000"
+    environment:
+      # ollama is the documented default (DESIGN.md 1.4). groq is a development fallback
+      # and changes what the frozen tag means, so switching it should be deliberate.
+      LLM_BACKEND: ${LLM_BACKEND:-ollama}
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+    extra_hosts:
+      # Ollama runs on the developer's machine, not in the container. Docker Desktop
+      # provides this alias already; the mapping is here so a Linux host behaves the same.
+      - "host.docker.internal:host-gateway"
+    restart: "no"
+
+  # aut-strong arrives with DESIGN.md 9's days 8-12 batch, not this one. It is a required
+  # build, not a nice-to-have (DESIGN.md 10: "without it the pitch has a hole you cannot
+  # patch verbally"), so this placeholder stays visible rather than being deleted.
+  #
+  # aut-strong:
+  #   image: ${AUT_STRONG_IMAGE:-clauseguard/aut-strong:aut-strong-v1}
+  #   container_name: clauseguard-aut-strong
+  #   ports:
+  #     - "8002:8000"

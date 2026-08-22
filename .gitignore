@@ -1,0 +1,32 @@
+# Secrets
+.env
+
+# Virtualenvs
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+report.xml
+
+# DESIGN.md 7.1: "we ship the fetcher, not the corpus."
+# Fetched policy text is cached locally and never committed.
+policies/.cache/
+
+# Model artifacts pulled at AUT build/run time
+aut-naive/.index/
+aut-strong/.index/
+*.faiss
+
+# OS
+Thumbs.db
+.DS_Store

@@ -1,0 +1,18 @@
+# aut-strong dependencies - DELIBERATELY SEPARATE from the harness.
+# DESIGN.md 1.4: same corpus as aut-naive, but a defensive prompt (cite clause
+# or decline), k=8, reranking, temperature 0.1, on a frontier API model.
+#
+# No shared imports with harness/ or with aut-naive/.
+
+fastapi
+uvicorn[standard]
+pydantic>=2.7
+httpx
+
+# retrieval: same embeddings, k=8 plus a reranking stage
+sentence-transformers
+faiss-cpu
+
+# frontier API model routing
+litellm
+python-dotenv

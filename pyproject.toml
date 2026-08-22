@@ -1,0 +1,79 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "clauseguard"
+version = "0.1.0"
+description = "Policy-conformance harness and deploy gate for money-touching agents"
+readme = "README.md"
+requires-python = ">=3.11"
+
+# ---------------------------------------------------------------------------
+# Dependencies. Source of truth is DESIGN.md "Appendix - dependency shortlist".
+#
+# Note: sentence-transformers and faiss-cpu are marked "(AUT only)" in the
+# Appendix and are deliberately NOT here. They live in aut-naive/requirements.txt
+# and aut-strong/requirements.txt. DESIGN.md 1.4 requires the agents under test
+# to share no imports with the harness, so they must not share a dependency set
+# either.
+# ---------------------------------------------------------------------------
+dependencies = [
+    # schema-forced LLM output + model routing (DESIGN.md 1.2, 1.5)
+    "pydantic>=2.7",
+    "instructor",
+    "litellm",
+
+    # probe generation pipeline (DESIGN.md 1.3)
+    "langgraph",
+    "faker",
+
+    # ingest (DESIGN.md 1.1)
+    "langchain-text-splitters",
+    "trafilatura",
+    "pypdf",
+
+    # audit store - SQLite, no server (DESIGN.md 1.6)
+    "sqlmodel",
+
+    # execution fan-out (DESIGN.md 2 step 6)
+    "httpx[http2]",
+    "anyio",
+
+    # review UI / dashboard / gate report - HTMX via CDN, no React (DESIGN.md 1.7)
+    "fastapi",
+    "uvicorn[standard]",
+    "jinja2",
+
+    # rule diffing + console output (DESIGN.md 2 step 3, 1.8)
+    "deepdiff",
+    "rich",
+
+    # Cohen's kappa, point-biserial (DESIGN.md 4.2, 3.4)
+    "scipy",
+
+    # --- additions beyond the literal Appendix, each with a reason ---
+    # uuid7() for run_id (DESIGN.md 1.6); not in the stdlib uuid module.
+    "uuid6",
+    # loads .env for GROQ_API_KEY and model routing config.
+    "python-dotenv",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    # DESIGN.md 6.1 wants JUnit XML -> GitHub annotations
+    "pytest-xdist",
+    # STEP 3 checkpoint runs --cov=harness.rules_engine
+    "pytest-cov",
+]
+
+[project.scripts]
+clauseguard = "harness.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["harness*"]
+
+[tool.coverage.run]
+branch = true
+source = ["harness"]

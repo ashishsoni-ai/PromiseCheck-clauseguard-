@@ -1,0 +1,24 @@
+# aut-naive dependencies - DELIBERATELY SEPARATE from the harness.
+# DESIGN.md 1.4: "Separate repo directory, separate container, own Dockerfile."
+# and "The harness talks to both over HTTP only. No shared imports."
+#
+# Nothing here may be imported by harness/, and nothing in harness/ may be
+# imported here. If these two files ever start converging, the frozen-agent
+# claim (commitment C3) is compromised.
+#
+# sentence-transformers and faiss-cpu are the "(AUT only)" entries from the
+# DESIGN.md Appendix.
+
+fastapi
+uvicorn[standard]
+pydantic>=2.7
+httpx
+
+# retrieval: bge-small-en-v1.5 embeddings + FAISS, top-k=3
+sentence-transformers
+faiss-cpu
+
+# generation backend (env-switchable: ollama default, groq fallback)
+ollama
+groq
+python-dotenv
