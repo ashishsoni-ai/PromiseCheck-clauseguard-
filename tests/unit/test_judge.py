@@ -571,7 +571,11 @@ class TestConfiguration:
 
         This assertion used to read `assert "llama" in DEFAULT_JUDGE_MODEL`, which went
         vacuous the moment the default became `ollama_chat/...` - the provider prefix
-        contains "llama" and satisfies it unaided. `family_of` strips the prefix first.
+        contains "llama" and satisfies it unaided. `family_of` strips the prefix first. The
+        default has since moved off Ollama again (it is hosted gpt-oss as of 2026-08-23), so
+        that particular collision is not live right now; the assertion stays family-based
+        because the pin has now moved three times and the next move should not need this test
+        rewritten to keep meaning something.
         """
         assert family_of(DEFAULT_JUDGE_MODEL) != "qwen"
 
@@ -580,9 +584,23 @@ class TestConfiguration:
 
     def test_the_model_comes_from_the_environment(self, monkeypatch):
         """The override value is a currently-live id on purpose: a decommissioned one
-        sitting in the suite is something a reader eventually copies into `.env`."""
-        monkeypatch.setenv(JUDGE_MODEL_ENV, "groq/openai/gpt-oss-120b")
-        assert resolve_judge_model() == "groq/openai/gpt-oss-120b"
+        sitting in the suite is something a reader eventually copies into `.env`.
+
+        The first assertion is what stops this from going vacuous. If `DEFAULT_JUDGE_MODEL`
+        were ever re-pinned to the same id used here as the override, the second assertion
+        would pass whether or not the environment was ever consulted - the same shape of
+        fault as the `ollama`/`llama` collision in `tests/model_families.py`, where the guard
+        kept reporting success after its subject moved. Both ids are gpt-oss today, which is
+        exactly the situation in which the two could quietly converge.
+        """
+        override = "groq/openai/gpt-oss-120b"
+        assert override != DEFAULT_JUDGE_MODEL, (
+            "this test can no longer tell whether the env var was read: the override value "
+            f"is now also the compiled-in default ({DEFAULT_JUDGE_MODEL!r}). Pick a "
+            "different live id."
+        )
+        monkeypatch.setenv(JUDGE_MODEL_ENV, override)
+        assert resolve_judge_model() == override
 
     def test_an_unset_model_falls_back_to_the_documented_default(self, monkeypatch):
         monkeypatch.delenv(JUDGE_MODEL_ENV, raising=False)

@@ -118,31 +118,88 @@ __all__ = [
 ]
 
 #: DESIGN.md 1.5 requires the judge to come from a different model family than the AUT.
-#: The agent under test is Qwen, so this is Llama - and since 2026-08-23 a *local* Llama.
+#: The agent under test is Qwen, so this is gpt-oss.
 #:
-#: WHY LOCAL, AND WHY THIS IS A CONFIG CHANGE RATHER THAN A DESIGN CHANGE
-#: The previous pin, `groq/llama-3.3-70b-versatile`, was decommissioned by the provider and
-#: began returning 404 `model_not_found`. DESIGN.md names no model ID anywhere except the
-#: AUT's Qwen; 1.5 and 2 step 8 constrain the model *family*, because a family is a
-#: property of the measurement while an ID is provider inventory that expires on someone
-#: else's schedule. The Appendix anticipates precisely this - "judge and extractor via
-#: `litellm` so model swaps are a config line - you will want that when a provider
-#: rate-limits you at 11pm on day 12". So: one line, and the family requirement is met more
-#: strongly than before. Judge (llama), AUT (qwen), adversary (mistral) and extractor (gpt)
-#: are now four distinct families rather than the previous three, since the old judge and
-#: adversary were both Llama and differed only in size.
+#: WHY THIS PIN MOVED TWICE ON 2026-08-23, AND WHY ONLY THE SECOND MOVE WAS MEASURED
+#: Model IDs are provider inventory, not spec. DESIGN.md names no model ID anywhere except
+#: the AUT's Qwen; 1.5 and 2 step 8 constrain the model *family*, because a family is a
+#: property of the measurement while an ID expires on someone else's schedule. The Appendix
+#: anticipates exactly this - "judge and extractor via `litellm` so model swaps are a config
+#: line - you will want that when a provider rate-limits you at 11pm on day 12".
 #:
-#: A local judge also takes the provider key out of the judge path entirely, which is worth
-#: something: the 2026-08-23 rotation was forced by a pytest traceback printing the
-#: `Authorization` header litellm passes as a frame argument.
+#: First move, forced: `groq/llama-3.3-70b-versatile` was decommissioned and began returning
+#: 404 `model_not_found`, so the judge went local to `ollama_chat/llama3.1:8b`. That restored
+#: availability and took the provider key out of the judge path - worth something, since the
+#: key rotation earlier the same day was forced by a pytest traceback printing the
+#: `Authorization` header litellm passes as a frame argument. But it was chosen on
+#: availability grounds with no latency measurement behind it.
 #:
-#: WHY `ollama_chat/` AND NOT `ollama/`
-#: litellm routes `ollama/` at the legacy `/api/generate` completion endpoint and
-#: `ollama_chat/` at `/api/chat`. `InstructorJudgeClient` needs the chat endpoint: instructor
-#: defaults to TOOLS mode, i.e. function calling, which `/api/generate` does not carry.
-#: `llama3.1` is one of the Ollama tags with native tool support, so the default mode holds
-#: and SCHEMA_REPAIR_RETRIES stays a safety net rather than the mechanism.
-DEFAULT_JUDGE_MODEL: Final = "ollama_chat/llama3.1:8b"
+#: Second move, measured: the local judge cost ~11.7s per call warm on this machine - 1294
+#: prompt tokens at 786 tok/s, then 121 generated tokens at 12.0 tok/s. At ~30 probes
+#: surviving L0 that is close to six minutes serialised, and step 8's k=3 on the
+#: consequential class takes it to twelve or more. DESIGN.md 2 step 11 asks for "under 45
+#: seconds for an incremental run". The judge is the only harness role on the incremental
+#: path - the extractor and adversary run during `generate`, which is an install step and may
+#: be slow - so the judge is the one role whose latency is load-bearing, and it was the one
+#: sitting on the slowest hardware available.
+#:
+#: The local pin was unreliable for a related reason, and the two facts share a cause: 6GB of
+#: VRAM does not comfortably hold a 4.9GB Q4 8B alongside a 4096-token KV cache, so the first
+#: load attempt died during CUDA init and Ollama retried with layers spilled to CPU - which
+#: is what a 12 tok/s generation rate on that GPU means. A judge that dies on cold load
+#: raises `JudgeError` and loses the row rather than abstaining (see "WHAT THE ABSTAIN RATE
+#: IS ALLOWED TO MEAN"), and step 6's semaphore of 8 would have attempted eight such loads at
+#: once. Raising concurrency would have made that worse, not better.
+#:
+#: ACKNOWLEDGED LIMITATION: THE JUDGE AND THE EXTRACTOR ARE NOW ONE FAMILY
+#: Of the 13 models this account can see on 2026-08-23, nine are not judges at all (2 ASR,
+#: 2 TTS, 2 prompt-injection classifiers of 22M/86M params, and 2 agentic systems with
+#: built-in web search, which 4.1 disqualifies since a judge that can search could pull in
+#: text outside the 2-4 candidate clauses). Five chat models remain: three gpt-oss, one Qwen
+#: - the agent's own family, closed to the judge by 1.5 - and `allam-2-7b`.
+#:
+#: So the honest claim is NOT that a hosted judge is *necessarily* gpt-oss; it is that no
+#: hosted model in a fourth family is a *suitable* judge. `allam-2-7b` is a real
+#: instruction-tuned chat model and would erase this limitation on paper. It was passed over
+#: because it is a 7B Arabic-first bilingual model being asked to read English policy prose,
+#: its tool-calling support - which instructor's TOOLS mode needs - is unverified here, and
+#: the judge is the one role graded mechanically: C2 requires a span that survives exact
+#: substring matching. A judge that abstains constantly damages the published numbers more
+#: than a judge sharing a family with the extractor does. See `docs/limitations.md`; if
+#: `allam-2-7b` is ever spiked and holds up, take it and delete that entry.
+#:
+#: The four roles therefore hold three families, not four:
+#:
+#:   agent      qwen2.5:7b-instruct        local, frozen in aut-naive
+#:   extractor  groq/openai/gpt-oss-120b   hosted    <-- one family
+#:   judge      groq/openai/gpt-oss-20b    hosted    <-- one family
+#:   adversary  ollama_chat/mistral:7b     local
+#:
+#: Recorded here, in `.env.example`, in README's limitations and in
+#: `tests/unit/test_aut_contract.py` rather than left to be discovered, because a limitation
+#: that lives only in a config diff is one nobody reads.
+#:
+#: Nothing in DESIGN.md forbids it. 1.5's rule is judge-versus-AUT and is met. 2's
+#: circularity warning names one specific mechanism - "a model that generated a probe is
+#: measurably more likely to accept a response that pattern-matches its own generation" -
+#: which is the adversary/judge relation, and that stays separated (gpt-oss vs mistral) and
+#: asserted.
+#:
+#: The extractor/judge overlap is a weaker concern, for a structural reason worth stating
+#: rather than assuming: the extractor produces rules, and under commitment C1 the
+#: ground-truth label is computed from those rules by `evaluate_rules()` in Python. The judge
+#: never sees that label and never grades the extractor's output - it classifies what the
+#: agent's reply committed to and cites a span, which C2 then checks mechanically. For a
+#: shared blind spot to reach a headline number it would have to route through a rule the
+#: extractor mis-extracted *and* a response the judge mis-classified in the same direction,
+#: with the span check passing throughout. That is not zero and it belongs in 8's
+#: limitations; it is not the same order of risk as grading a probe with the model that
+#: wrote it.
+#:
+#: (`ollama_chat/` versus `ollama/` still matters for the adversary, which stays local:
+#: litellm routes `ollama/` at the legacy `/api/generate` and `ollama_chat/` at `/api/chat`,
+#: and instructor's default TOOLS mode needs the chat endpoint.)
+DEFAULT_JUDGE_MODEL: Final = "groq/openai/gpt-oss-20b"
 JUDGE_MODEL_ENV: Final = "CLAUSEGUARD_JUDGE_MODEL"
 
 #: DESIGN.md 4.1: L1 runs at temp 0.0. L3's 0.3 is a different knob for a different layer
@@ -156,19 +213,18 @@ JUDGE_TEMP_ENV: Final = "CLAUSEGUARD_JUDGE_TEMP"
 #: would either hide a fabrication behind a parse error or spend C2's retry on a comma.
 SCHEMA_REPAIR_RETRIES: Final = 2
 
-#: A ceiling on a failure, not a target. Raised from 120.0 on 2026-08-23 when the judge
-#: moved to a local model: a cold Ollama load of a 7-8B model was measured at 81s on this
-#: machine, and Ollama serialises generation by default, so a queued call behind a cold load
-#: can plausibly exceed two minutes without anything being wrong.
+#: A ceiling on a failure, not a target. Back to 120.0 now that the judge is hosted again:
+#: the 300.0 it briefly held existed for one reason, a cold Ollama load of an 8B model
+#: measured at ~81s on this machine, and cold loads are not on this path any more.
 #:
-#: This is in tension with DESIGN.md 2 step 11's "under 45 seconds for an incremental run",
-#: which a serialised local judge will not meet at ~37 probes - and step 8's k=3 majority on
-#: the consequential class triples the calls that matter most. That is a Step 7 decision
-#: about where the judge runs, not a reason to set a timeout that turns slowness into a
-#: JudgeError: a timeout here loses the row entirely rather than abstaining (see "WHAT THE
-#: ABSTAIN RATE IS ALLOWED TO MEAN"), so it must be generous and the speed problem must be
-#: solved somewhere it can be seen.
-DEFAULT_TIMEOUT_S: Final = 300.0
+#: The principle it has to satisfy has not changed. A timeout here raises `JudgeError` and
+#: loses the row entirely rather than abstaining (see "WHAT THE ABSTAIN RATE IS ALLOWED TO
+#: MEAN"), so it must be generous enough never to be the thing that fires under ordinary
+#: provider latency - a timeout that trims the slow tail would quietly shrink the denominator
+#: of every published metric. It is deliberately far above DESIGN.md 2 step 11's 45-second
+#: run target, because that target describes a healthy run and this number describes a broken
+#: one; conflating them would buy speed by discarding measurements.
+DEFAULT_TIMEOUT_S: Final = 120.0
 
 
 class JudgeError(RuntimeError):

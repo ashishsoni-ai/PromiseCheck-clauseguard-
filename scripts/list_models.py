@@ -47,15 +47,21 @@ ENV_PATH: Final = REPO_ROOT / ".env"
 #: from `harness` so a broken import cannot stop the diagnostic that would explain the
 #: breakage.
 #:
-#: Only two roles are here. Since the 2026-08-23 re-pin the judge and the adversary run
-#: locally on Ollama, and this script asks Groq what Groq has - it cannot speak for them.
-#: Their equivalent check is the `require_judge_backend` fixture in `tests/conftest.py`,
-#: which asks Ollama's `/api/tags` whether the pinned tag is actually pulled. Listing them
-#: here with no way to verify them would be worse than omitting them: this script exits 1
-#: to gate a run, and a gate that reports on things it cannot see is how the gate stops
-#: being believed.
+#: The ADVERSARY is absent because it runs locally on Ollama and this script asks Groq what
+#: Groq has - it cannot speak for it. Its equivalent check is the `require_judge_backend`
+#: fixture's `/api/tags` lookup in `tests/conftest.py`. Listing a local model here with no way
+#: to verify it would be worse than omitting it: this script exits 1 to gate a run, and a gate
+#: that reports on things it cannot see is how the gate stops being believed.
+#:
+#: The JUDGE was briefly absent for that reason and came back on 2026-08-23, when it moved
+#: from `ollama_chat/llama3.1:8b` to a hosted model after a local call was measured at ~11.7s
+#: against DESIGN.md 2 step 11's 45-second run target. It is the entry this script most needs:
+#: the judge runs on every incremental run, step 6 fans out with a semaphore of 8, and a dead
+#: judge ID raises `JudgeError` rather than abstaining - so the rows are lost, not merely
+#: unverified.
 PINNED: Final = {
     "extractor (DESIGN.md 2 step 3)": "groq/openai/gpt-oss-120b",
+    "judge (DESIGN.md 4.1)": "groq/openai/gpt-oss-20b",
     "agent's groq fallback, GROQ_MODEL (must stay Qwen)": "qwen/qwen3.6-27b",
 }
 

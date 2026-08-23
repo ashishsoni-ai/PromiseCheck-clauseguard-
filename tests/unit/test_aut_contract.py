@@ -446,6 +446,22 @@ class TestTheJudgeStaysInADifferentFamilyFromTheAgent:
     the judge is most likely to find a fluent over-promise reasonable exactly when the
     agent's own priors produced it. That is grading with the marker that wrote the answer.
     Asserted here because the constraint spans two files and a comment cannot enforce it.
+
+    THE COMMENT IN `backends.py` ABOVE `DEFAULT_GROQ_MODEL` IS STALE, AND MUST STAY STALE.
+    It explains the Qwen requirement by naming the judge as `llama-3.3-70b-versatile` and the
+    adversary as `llama-3.1-8b-instant`. Both were re-pinned on 2026-08-23 - the judge is now
+    hosted gpt-oss and the adversary is local mistral - so the comment's *reason* is out of
+    date while its *rule* is still exactly right.
+
+    It cannot be corrected. `aut-naive/backends.py` is inside the frozen tree, the
+    `aut-naive-v1` tag records `git rev-parse HEAD:aut-naive`, and editing any byte under
+    `aut-naive/` changes that hash and makes every audit row citing the tag unverifiable
+    (commitment C3). Fixing a comment is not worth breaking the freeze, and a freeze that
+    bends for a comment is not a freeze.
+
+    So this class is the live source of truth for the rule, which is what that comment's own
+    last line already says: "Enforced by a test, not by this comment." The next legitimate
+    re-freeze of the agent is when the wording gets updated.
     """
 
     def test_the_frozen_default_is_qwen(self):
@@ -489,6 +505,189 @@ class TestTheJudgeStaysInADifferentFamilyFromTheAgent:
         models = env_example_models()
         assert "GROQ_MODEL" in models, "GROQ_MODEL is missing from .env.example"
         assert family_of(models["GROQ_MODEL"]) == family_of(OLLAMA_MODEL)
+
+
+class TestTheJudgeDoesNotShareAFamilyWithTheAdversary:
+    """DESIGN.md 2 (lines 253-256), verbatim:
+
+        "Using one prompt for all three is the most common way this project quietly fails: a
+        model that generated a probe is measurably more likely to accept a response that
+        pattern-matches its own generation. Different roles, different prompts, and where
+        budget allows different providers."
+
+    Note what the spec actually requires and what it merely prefers. Different *prompts* is
+    unconditional; different *providers* is hedged with "where budget allows". So unlike the
+    judge-vs-agent rule in 1.5, this assertion enforces more than the specification demands,
+    and that was a deliberate call (user-approved 2026-08-23) rather than a reading of the
+    text.
+
+    The reason for going beyond the spec here: the named failure - a model accepting what
+    pattern-matches its own generation - is a property of the *model*, not of the prompt. A
+    different prompt does not give a model different priors about which refund story sounds
+    reasonable. Prompt separation is necessary and cheap; family separation is what actually
+    addresses the mechanism the spec describes. The current pins satisfy it at no cost, so
+    the budget hedge does not apply and there is nothing to trade away by pinning it.
+
+    Since the judge moved to a hosted model later the same day, this pair now also satisfies
+    the spec's hedged preference in full: judge `groq/openai/gpt-oss-20b` and adversary
+    `ollama_chat/mistral:7b` are different *providers* as well as different families. That is
+    a side effect of a latency decision rather than something aimed at, and it is the one
+    pair for which the "different providers" wording was written.
+
+    If a future provider outage forces both roles back into one family, this test failing is
+    the correct outcome: it is a real weakening of the measurement and belongs in 8's
+    limitations, not in a config diff nobody reads.
+    """
+
+    ROLES = ("CLAUSEGUARD_JUDGE_MODEL", "CLAUSEGUARD_ADVERSARY_MODEL")
+
+    def test_the_judge_and_the_adversary_are_different_families(self):
+        models = env_example_models()
+        for role in self.ROLES:
+            assert role in models, f"{role} is missing from .env.example"
+        judge, adversary = (models[role] for role in self.ROLES)
+        assert family_of(judge) != family_of(adversary), (
+            f"judge {judge!r} and adversary {adversary!r} are both "
+            f"{family_of(judge)!r}. The adversary writes the probe and the judge grades "
+            "the response to it; from one family that is closer to self-assessment than "
+            "to review. See this class's docstring before relaxing it."
+        )
+
+    def test_this_assertion_would_have_failed_under_the_pins_it_was_written_for(self):
+        """Control, in the same spirit as `naive_family_of` in test_model_families.py.
+
+        Until the 2026-08-23 re-pin the judge was `groq/llama-3.3-70b-versatile` and the
+        adversary `groq/llama-3.1-8b-instant` - one family, differing only in parameter
+        count, which is exactly the arrangement 2 warns about. The test above passes today
+        only because the pins moved, so without this control there is no way to tell it
+        apart from an assertion that cannot fail. That distinction has already bitten this
+        project three times.
+        """
+        assert family_of("groq/llama-3.3-70b-versatile") == family_of(
+            "groq/llama-3.1-8b-instant"
+        ), "the control is broken: these two really were one family"
+
+
+def ptext(pairs: set[frozenset[str]]) -> str:
+    """Render colliding role pairs readably in an assertion message.
+
+    Bare frozensets print as `frozenset({'judge', 'extractor'})` in an unstable order, which
+    is a poor thing to hand someone reading a failure for the first time. Sorted twice - within
+    each pair and across them - so the message is identical on every run and can be diffed.
+    """
+    if not pairs:
+        return "{none}"
+    return "{" + ", ".join(sorted("+".join(sorted(pair)) for pair in pairs)) + "}"
+
+
+class TestTheKnownFamilyCollisionIsTheDocumentedOne:
+    """Four roles, three families. The judge and the extractor are both gpt-oss, and that is
+    an accepted limitation rather than an oversight - so it is asserted, not merely written
+    down, and asserted in a form that pins *which* collision is the accepted one.
+
+    WHY THE COLLISION EXISTS
+    Of the 13 models this account can see, five are chat models: three gpt-oss, one Qwen -
+    the agent's own family, closed to the judge by DESIGN.md 1.5 - and `allam-2-7b`. The
+    remaining eight are ASR, TTS, tiny prompt-injection classifiers, or agentic systems with
+    built-in web search that 4.1 disqualifies. So no hosted model in a fourth family is a
+    *suitable* judge: `allam-2-7b` is Arabic-first at 7B with unverified tool-calling, and
+    the judge is the one role graded mechanically by C2's exact-substring span check. The
+    judge also had to be hosted at all: a local 8B judge measured ~11.7s per call on this
+    machine against 2 step 11's "under 45 seconds for an incremental run", and the judge is
+    the only harness role on the incremental path. Full reasoning sits above
+    `DEFAULT_JUDGE_MODEL` in `harness/judge/judge.py`.
+
+    WHY THIS TEST IS AN EQUALITY ON A SET AND NOT A "count >= 3"
+    A count would let the collision *move* silently. If someone re-pinned the extractor to a
+    Mistral model, the count of distinct families would stay at three and this file would go
+    on passing while the collision landed on the adversary/judge pair - the one pair DESIGN.md
+    2 actually warns about, and the one `TestTheJudgeDoesNotShareAFamilyWithTheAdversary`
+    exists to forbid. Comparing the full set of colliding pairs against a single named pair
+    means any change to which roles overlap fails here and has to be re-argued.
+
+    So this test failing is not a bug to route around. It means the family topology moved, and
+    the correct response is to decide whether the new overlap is acceptable and record that
+    decision - in 8's limitations and in this docstring - before changing the expectation.
+
+    `GROQ_MODEL`, the agent's hosted fallback, is deliberately absent from the table below. It
+    is pinned to the agent's family *on purpose* so the agent cannot change species by
+    changing backend, which `test_the_env_override_for_the_dead_fallback_stays_in_the_agents_family`
+    asserts as an equality. Including it here would book that intended match as a collision.
+    """
+
+    HARNESS_ROLES = {
+        "extractor": "CLAUSEGUARD_EXTRACTOR_MODEL",
+        "judge": "CLAUSEGUARD_JUDGE_MODEL",
+        "adversary": "CLAUSEGUARD_ADVERSARY_MODEL",
+    }
+
+    #: The overlap that has been argued for and accepted. Any other, or none, fails.
+    ACCEPTED = {frozenset(("extractor", "judge"))}
+
+    def _families(self) -> dict[str, str]:
+        """Role -> family, reading each role from wherever it is really pinned.
+
+        The agent's comes from the frozen tree rather than `.env.example`: its model is a
+        constant in `backends.py` precisely because a frozen agent whose behaviour moves with
+        an env var is not frozen (commitment C3), so `.env.example` is not authoritative for it.
+        """
+        models = env_example_models()
+        for role, key in self.HARNESS_ROLES.items():
+            assert key in models, f"{key} ({role}) is missing from .env.example"
+        families = {"agent": family_of(OLLAMA_MODEL)}
+        families.update(
+            {role: family_of(models[key]) for role, key in self.HARNESS_ROLES.items()}
+        )
+        return families
+
+    @staticmethod
+    def _colliding_pairs(families: dict[str, str]) -> set[frozenset[str]]:
+        return {
+            frozenset((one, other))
+            for one, first in families.items()
+            for other, second in families.items()
+            if one != other and first == second
+        }
+
+    def test_the_only_family_overlap_is_judge_and_extractor(self):
+        families = self._families()
+        collisions = self._colliding_pairs(families)
+        assert collisions == self.ACCEPTED, (
+            f"the family topology moved. Roles now map to {families!r}, giving overlapping "
+            f"pairs {ptext(collisions)} where only {ptext(self.ACCEPTED)} has been argued "
+            "for and accepted. Read this class's docstring: the fix is to decide whether the "
+            "new overlap is acceptable and record it in DESIGN.md 8's limitations, not to "
+            "edit ACCEPTED until the test passes."
+        )
+
+    def test_the_check_is_sensitive_in_both_directions(self):
+        """Control, in the same spirit as `naive_family_of` in test_model_families.py.
+
+        The assertion above compares against a hand-written expectation, which is exactly the
+        shape of test that can quietly stop discriminating. These two hypotheticals prove the
+        comparison notices both a *wider* overlap than the accepted one and a *narrower* one -
+        so passing above means the topology really is the documented one, not that the helper
+        returns the accepted set regardless of input.
+        """
+        collapsed = {
+            "agent": "qwen",
+            "extractor": "gpt",
+            "judge": "gpt",
+            "adversary": "gpt",
+        }
+        assert len(self._colliding_pairs(collapsed)) == 3, (
+            "the control is broken: three roles in one family is three overlapping pairs"
+        )
+        assert self._colliding_pairs(collapsed) != self.ACCEPTED
+
+        four_distinct = {
+            "agent": "qwen",
+            "extractor": "gpt",
+            "judge": "llama",
+            "adversary": "mistral",
+        }
+        assert self._colliding_pairs(four_distinct) == set()
+        assert self._colliding_pairs(four_distinct) != self.ACCEPTED
 
 
 class TestTheOllamaHostVariableDoesNotCollide:

@@ -45,7 +45,7 @@ next begins.
 | 6 | Append-only audit store | not started |
 | 7 | Vertical slice: `clauseguard run` | not started |
 
-As of 2026-08-23 the suite is 852 offline tests, plus 2 `live` tests exercising the
+As of 2026-08-23 the suite is 856 offline tests, plus 2 `live` tests exercising the
 real judge. L3 self-consistency (the k=3 majority on the consequential class,
 DESIGN.md §2 step 8) is a stub: scoped out of Step 5 deliberately, not missed.
 
@@ -80,19 +80,22 @@ pip install -e .
 copy .env.example .env          # then fill in GROQ_API_KEY
 ```
 
-Three local models, one per role. The agent's is frozen in its own code; the judge
-and adversary are pinned in `.env.example` and must come from families that differ
-from the agent's and from each other (see §1.5 of the design):
+Two local models. The agent's is frozen in its own code; the adversary is pinned in
+`.env.example`. Every role must come from a family that differs from the agent's
+(see §1.5 of the design), and the adversary must also differ from the judge:
 
 ```bash
 ollama pull qwen2.5:7b-instruct   # the agent under test
-ollama pull llama3.1:8b           # judge
 ollama pull mistral:7b            # adversary
 ```
 
-Only the extractor is hosted, on Groq, which is the one thing `GROQ_API_KEY` is
-for. Check that what the config pins still exists before a run — provider
-inventory expires without warning:
+The extractor and the judge are hosted on Groq, which is what `GROQ_API_KEY` is
+for. The judge ran locally for part of 2026-08-23 and moved back: a local 8B judge
+measured ~11.7s per call on the development machine, and the judge is the only role
+on the incremental path, where §2 step 11 asks for under 45 seconds end to end.
+
+Check that what the config pins still exists before a run — provider inventory
+expires without warning:
 
 ```bash
 python scripts/list_models.py
@@ -124,4 +127,7 @@ results are always broken out separately rather than pooled.
 ## Limitations
 
 Kept in [`docs/limitations.md`](docs/limitations.md) and stated up front rather
-than discovered by a reviewer.
+than discovered by a reviewer. The first entry is a real one: the judge and the
+extractor come from the same model family, because no hosted model in a fourth
+family was a suitable judge and a local judge missed the §2 step 11 latency target.
+The entry names the candidate that was passed over and why.
