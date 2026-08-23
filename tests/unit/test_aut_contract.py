@@ -31,6 +31,8 @@ from typing import Sequence
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.model_families import family_of
+
 AUT_DIR = Path(__file__).resolve().parents[2] / "aut-naive"
 if str(AUT_DIR) not in sys.path:
     sys.path.insert(0, str(AUT_DIR))
@@ -59,32 +61,17 @@ REPO_ROOT = AUT_DIR.parent
 ENV_EXAMPLE = REPO_ROOT / ".env.example"
 COMPOSE = REPO_ROOT / "docker-compose.yml"
 
-FAMILY_TOKENS = (
-    "qwen",
-    "llama",
-    "mistral",
-    "mixtral",
-    "gemma",
-    "phi",
-    "deepseek",
-    "gpt",
-    "claude",
-)
-
-
-def family_of(model: str) -> str:
-    lowered = model.lower()
-    for token in FAMILY_TOKENS:
-        if token in lowered:
-            return token
-    raise AssertionError(
-        f"unrecognised model family in {model!r}. Add it to FAMILY_TOKENS rather than "
-        "loosening this check - DESIGN.md 1.5 depends on families being comparable."
-    )
-
 
 def env_example_models() -> dict[str, str]:
     """The `*_MODEL` settings as `.env.example` documents them."""
+    assert ENV_EXAMPLE.is_file(), (
+        f"{ENV_EXAMPLE.name} is missing from the working tree. It is tracked in git, so "
+        "this is a local deletion, not an absence - it went missing around the 2026-08-23 "
+        "key rotation, most likely `.env` being created from it by rename rather than "
+        "copy. Restore with `git show HEAD:.env.example > .env.example` rather than "
+        "committing the deletion, which would take the documented config with it. This "
+        "check exists because the bare FileNotFoundError below reads like a broken test."
+    )
     found: dict[str, str] = {}
     for line in ENV_EXAMPLE.read_text(encoding="utf-8").splitlines():
         stripped = line.strip()
@@ -486,6 +473,22 @@ class TestTheJudgeStaysInADifferentFamilyFromTheAgent:
         """An adversary writing probes against itself is not adversarial, it is a mirror."""
         adversary = env_example_models()["CLAUSEGUARD_ADVERSARY_MODEL"]
         assert not adversary.endswith(DEFAULT_GROQ_MODEL)
+
+    def test_the_env_override_for_the_dead_fallback_stays_in_the_agents_family(self):
+        """`DEFAULT_GROQ_MODEL` (qwen/qwen3-32b) was decommissioned on 2026-08-23, but it
+        lives inside the frozen tree and cannot be edited: the `aut-naive-v1` tag records
+        `git rev-parse HEAD:aut-naive`, and a moved tag makes every audit row citing it
+        unverifiable (commitment C3). The revival therefore happens through the
+        `GROQ_MODEL` env var, which `backends.py` reads ahead of its own constant.
+
+        Which means the family constraint has moved out of frozen code and into a config
+        file, where it can be changed by anyone - so it needs asserting here. Equality, not
+        difference: the fallback exists so the agent can run without Ollama, not so it can
+        run as a different species of model while still reporting itself as the same agent.
+        """
+        models = env_example_models()
+        assert "GROQ_MODEL" in models, "GROQ_MODEL is missing from .env.example"
+        assert family_of(models["GROQ_MODEL"]) == family_of(OLLAMA_MODEL)
 
 
 class TestTheOllamaHostVariableDoesNotCollide:

@@ -36,14 +36,18 @@ next begins.
 
 | Step | Component | State |
 |---|---|---|
-| 0 | Scaffold + dependency setup | in review |
-| 1 | Pydantic schemas | not started |
-| 2 | Ingest + clause hashing | not started |
-| 3 | `evaluate_rules()` correctness core | not started |
-| 4 | `aut-naive`, frozen by SHA | not started |
-| 5 | Judge L0 prefilter + L1 classify + L2 span verify | not started |
+| 0 | Scaffold + dependency setup | done |
+| 1 | Pydantic schemas | done |
+| 2 | Ingest + clause hashing | done |
+| 3 | `evaluate_rules()` correctness core | done |
+| 4 | `aut-naive`, frozen by SHA | done, frozen at `aut-naive-v1` |
+| 5 | Judge L0 prefilter + L1 classify + L2 span verify | done |
 | 6 | Append-only audit store | not started |
 | 7 | Vertical slice: `clauseguard run` | not started |
+
+As of 2026-08-23 the suite is 852 offline tests, plus 2 `live` tests exercising the
+real judge. L3 self-consistency (the k=3 majority on the consequential class,
+DESIGN.md §2 step 8) is a stub: scoped out of Step 5 deliberately, not missed.
 
 Everything after Step 7 — rule extraction, probe-generation automation,
 `aut-strong`, the CI gate, the dashboard — is deliberately not started yet.
@@ -66,7 +70,7 @@ lockfiles. CI never does bulk generation; `clauseguard generate` is the
 
 ## Setup
 
-Requires Python 3.11+, and for `aut-naive`, Docker plus Ollama.
+Requires Python 3.11+, and Ollama. Docker too, for `aut-naive`.
 
 ```bash
 python -m venv .venv
@@ -74,6 +78,24 @@ python -m venv .venv
 pip install -r requirements.txt
 pip install -e .
 copy .env.example .env          # then fill in GROQ_API_KEY
+```
+
+Three local models, one per role. The agent's is frozen in its own code; the judge
+and adversary are pinned in `.env.example` and must come from families that differ
+from the agent's and from each other (see §1.5 of the design):
+
+```bash
+ollama pull qwen2.5:7b-instruct   # the agent under test
+ollama pull llama3.1:8b           # judge
+ollama pull mistral:7b            # adversary
+```
+
+Only the extractor is hosted, on Groq, which is the one thing `GROQ_API_KEY` is
+for. Check that what the config pins still exists before a run — provider
+inventory expires without warning:
+
+```bash
+python scripts/list_models.py
 ```
 
 Verify:
@@ -84,10 +106,12 @@ pytest
 ```
 
 The default test suite is offline and deterministic. Tests that hit a real
-provider are marked `live` and deselected unless you ask for them:
+provider or a local model are marked `live` and deselected unless you ask for
+them. Use `--tb=short`: the default long traceback prints each frame's argument
+values, and litellm takes `api_key` and `headers` as arguments.
 
 ```bash
-pytest -m live
+pytest -m live --tb=short
 ```
 
 ## Corpus honesty

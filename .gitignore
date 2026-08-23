@@ -1,6 +1,12 @@
 # Secrets
 .env
 
+# Commit messages are always passed via `git commit -F .commit-msg`, never -m:
+# PowerShell 5.1 mangles embedded double quotes, which silently corrupts any
+# message containing a quoted clause or model ID.
+.commit-msg
+.commit-msg.txt
+
 # Virtualenvs
 .venv/
 venv/

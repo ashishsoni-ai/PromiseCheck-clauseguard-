@@ -28,14 +28,78 @@ from harness.schemas import (
 
 # --------------------------------------------------------------------------
 # Live-provider gating. pytest.ini already deselects `-m "not live"` by default;
-# this fixture additionally skips live tests when no credential is present, so
-# `pytest -m live` on a machine without a key reports "skipped: no key" instead
-# of a wall of auth errors.
+# these fixtures additionally skip live tests when the thing they need is not
+# actually runnable, so `pytest -m live` on an unprepared machine reports a
+# reason instead of a wall of auth or connection errors.
 # --------------------------------------------------------------------------
 @pytest.fixture
-def require_llm_credentials() -> None:
+def require_groq_credentials() -> None:
+    """For live tests that really do call Groq - currently the extractor's."""
     if not os.getenv("GROQ_API_KEY"):
-        pytest.skip("GROQ_API_KEY not set; live provider tests skipped")
+        pytest.skip("GROQ_API_KEY not set; live Groq tests skipped")
+
+
+@pytest.fixture
+def require_judge_backend() -> None:
+    """Skip a live judge test unless the *currently pinned* judge can actually run.
+
+    Dispatches on `resolve_judge_model()` rather than checking one fixed provider. On
+    2026-08-23 the judge moved from Groq to a local Ollama model, and this fixture used to
+    gate on `GROQ_API_KEY` alone: it would have gone on reporting a green precondition
+    based on a credential the judge no longer uses, and the test would then fail on a
+    connection error that reads like a logic bug. That is the same shape of fault as the
+    `ollama`/`llama` collision in `tests/model_families.py` - a guard whose subject moved
+    out from under it, still reporting success.
+
+    Deliberately stdlib-only. A fixture that needs httpx to decide whether to skip is one
+    more thing that can fail before any test has run.
+    """
+    from harness.judge.judge import resolve_judge_model
+    from tests.model_families import strip_provider_prefix
+
+    model = resolve_judge_model()
+    provider = model.partition("/")[0].casefold() if "/" in model else ""
+
+    if not provider.startswith("ollama"):
+        if not os.getenv("GROQ_API_KEY"):
+            pytest.skip(f"judge is {model} and GROQ_API_KEY is not set")
+        return
+
+    base_url = os.getenv("OLLAMA_API_BASE") or "http://localhost:11434"
+    tag = strip_provider_prefix(model)
+    installed = _ollama_installed_tags(base_url)
+
+    if installed is None:
+        pytest.skip(
+            f"judge is {model} but Ollama is unreachable at {base_url} "
+            "(start it, or set OLLAMA_API_BASE)"
+        )
+    # Ollama reports an untagged pull as `name:latest`, so compare on both forms.
+    wanted = {tag, tag if ":" in tag else f"{tag}:latest"}
+    if not (wanted & set(installed)):
+        pytest.skip(
+            f"judge model {tag} is not pulled (have: {', '.join(sorted(installed)) or 'none'}). "
+            f"Run `ollama pull {tag}`"
+        )
+
+
+def _ollama_installed_tags(base_url: str, timeout_s: float = 3.0) -> list[str] | None:
+    """Tag names Ollama reports, or None if it could not be reached at all.
+
+    None and [] mean different things and the caller says so differently: a server that is
+    not running is an operator's setup problem, an empty model list is a missing pull.
+    """
+    import json
+    import urllib.error
+    import urllib.request
+
+    url = f"{base_url.rstrip('/')}/api/tags"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout_s) as response:  # noqa: S310
+            payload = json.load(response)
+    except (urllib.error.URLError, OSError, ValueError, TimeoutError):
+        return None
+    return [entry["name"] for entry in payload.get("models", []) if "name" in entry]
 
 
 # --------------------------------------------------------------------------

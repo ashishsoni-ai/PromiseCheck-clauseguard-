@@ -18,6 +18,7 @@ harness *cannot* import it by accident.
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import sys
 from pathlib import Path
@@ -42,6 +43,35 @@ CORPUS_DIR = AUT_DIR / "corpus"
 
 def body(words: int, *, word: str = "policy") -> str:
     return " ".join(f"{word}{i:04d}" for i in range(words))
+
+
+def code_without_prose(source: str, *, filename: str = "<source>") -> str:
+    """Return `source` stripped of comments and docstrings, string literals intact.
+
+    The distinction this draws is the whole point of the separation tripwire below. A
+    docstring naming the agent directory *describes* the agent; a string literal handed
+    to `spec_from_file_location`, `Path` or `open` *reaches into* it. DESIGN.md 1.4
+    prohibits the second - "no shared imports" - and cannot prohibit the first, because
+    the harness has to be able to explain what it is measuring.
+
+    Comments need no handling: `ast` never records them. Docstrings are dropped
+    explicitly, and a body left empty by that removal gets a `pass` so the tree still
+    unparses. Everything with runtime meaning survives, string literals included.
+    """
+    tree = ast.parse(source, filename=filename)
+    for node in ast.walk(tree):
+        if not isinstance(
+            node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef
+        ):
+            continue
+        first = node.body[0] if node.body else None
+        if (
+            isinstance(first, ast.Expr)
+            and isinstance(first.value, ast.Constant)
+            and isinstance(first.value.value, str)
+        ):
+            node.body = node.body[1:] or [ast.Pass()]
+    return ast.unparse(tree)
 
 
 class TestTheWindowsCoverTheSource:
@@ -244,13 +274,53 @@ class TestTheSeparationIsStructural:
         assert offenders == []
 
     def test_no_harness_module_reaches_into_the_aut_directory(self):
+        """DESIGN.md 1.4's "no shared imports", checked against code and not prose.
+
+        Narrowed on 2026-08-22 (user-approved) after it failed on five docstrings and
+        comments in `harness/judge/` that only *described* the agent - including the
+        pointer to where its model family is chosen, which is what makes the 1.5
+        different-family requirement auditable. Those five were reworded anyway, so
+        `harness/` currently contains no mention at all; that is precisely why the two
+        tests below exist. With the tree clean this assertion would pass even if
+        `code_without_prose` returned the empty string, so the filter's own behaviour is
+        pinned in both directions rather than assumed.
+        """
         harness = AUT_DIR.parent / "harness"
+        needles = (AUT_DIR.name, AUT_DIR.name.replace("-", "_"))
         offenders = []
         for path in sorted(harness.rglob("*.py")):
-            text = path.read_text(encoding="utf-8")
-            if "aut-naive" in text or "aut_naive" in text:
+            code = code_without_prose(
+                path.read_text(encoding="utf-8"), filename=str(path)
+            )
+            if any(needle in code for needle in needles):
                 offenders.append(str(path.relative_to(harness.parent)))
         assert offenders == []
+
+    def test_the_prose_filter_still_catches_a_path_handed_to_importlib(self):
+        """The failure mode the tripwire actually guards: the hyphen blocks `import
+        aut-naive`, so anyone coupling the harness to the agent would do it by path."""
+        needle = AUT_DIR.name
+        source = (
+            "import importlib.util\n"
+            "spec = importlib.util.spec_from_file_location(\n"
+            f"    'app', '{needle}/app.py'\n"
+            ")\n"
+        )
+        assert needle in code_without_prose(source)
+
+    def test_the_prose_filter_ignores_docstrings_and_comments(self):
+        needle = AUT_DIR.name
+        source = (
+            f'"""Module docstring naming {needle}."""\n'
+            f"# a comment naming {needle}\n"
+            "def f():\n"
+            f'    """Nested docstring naming {needle}."""\n'
+            "    return 1\n"
+        )
+        code = code_without_prose(source)
+        assert needle not in code
+        # guards against passing by emitting nothing at all
+        assert "return 1" in code
 
     def test_chunk_boundaries_do_not_align_with_harness_clause_units(self):
         """If retrieval landed on clause units, the benchmark would be flattering the
