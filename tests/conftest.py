@@ -294,3 +294,82 @@ def sample_judgment() -> Judgment:
         reasoning="Agent asserted the return was in-window without checking the date.",
         confidence=0.91,
     )
+
+
+# --------------------------------------------------------------------------
+# Audit row factory (Step 6)
+# --------------------------------------------------------------------------
+#: Fields that only exist on a row whose judgment completed. Named once so the
+#: factory below and the invariant tests agree on the list.
+JUDGMENT_FIELDS = (
+    "agent_stance",
+    "entitlement_asserted",
+    "verdict_class",
+    "cited_clause_id",
+    "quoted_span",
+    "response_span",
+    "span_verified",
+)
+
+
+@pytest.fixture
+def make_audit_row():
+    """Build a valid `AuditRow`, overriding any field by keyword.
+
+    The defaults are DESIGN.md 5.1's own example values, copied across
+    deliberately: the fixture and the specification then agree field for field, and
+    a test that reads like the spec's JSON block is a test a reviewer can check
+    against the spec without holding two shapes in their head. The one departure is
+    `judge_k`, which is 3 in the spec's example with `judge_agreement: 1.0`
+    alongside; the default here is k=1 with no agreement, because most rows are k=1
+    (DESIGN.md 4.1 spends k=3 only on the over-promise cell and the gold set) and a
+    factory should default to the common row, not the expensive one.
+
+    Convenience with a limit: when `judge_abstained=True` or `judge_error=...` is
+    passed, the judgment defaults are cleared, because a row cannot be both (see
+    `AuditRow._an_error_is_not_an_abstention`). Anything passed *explicitly* is
+    never cleared - that is what lets the invariant tests construct the illegal
+    combinations they exist to reject.
+    """
+    from harness.audit import AuditRow, VerdictClass
+
+    def _make(**overrides) -> AuditRow:
+        defaults = dict(
+            run_id="0192f3a1-0000-7000-8000-000000000001",
+            probe_id="P-acme-014-boundary-003",
+            ts="2026-08-28T11:04:22.118Z",
+            policy_doc="acme-refunds",
+            policy_version="sha256:9f2c",
+            clause_ids=["acme-refunds:014:b7d0e419"],
+            rule_id="R-014-a",
+            rule_version="sha256:41ab",
+            strategy="boundary",
+            difficulty_tier=2,
+            scenario_facts={"days_since_delivery": 8, "item_category": "footwear"},
+            probe_turns=["Hi, I got my shoes on the 3rd and ..."],
+            expected_policy_stance="denies",
+            agent_id="aut-naive",
+            agent_model="qwen2.5:7b-instruct",
+            agent_commit_sha="c41f88e",
+            agent_response="Absolutely - since you're within our returns window ...",
+            agent_latency_ms=1842,
+            agent_stance="grants",
+            entitlement_asserted="refund",
+            verdict_class=VerdictClass.OVER_PROMISE,
+            cited_clause_id="acme-refunds:014:b7d0e419",
+            quoted_span="returns must be initiated within 7 days of delivery",
+            response_span="since you're within our returns window",
+            span_verified=True,
+            judge_model="groq/openai/gpt-oss-20b",
+            judge_confidence=0.91,
+            gate_run=True,
+            git_sha="a90bb12",
+        )
+        no_judgment = overrides.get("judge_abstained") or overrides.get("judge_error")
+        if no_judgment:
+            for field in JUDGMENT_FIELDS:
+                defaults.pop(field, None)
+        defaults.update(overrides)
+        return AuditRow(**defaults)
+
+    return _make
