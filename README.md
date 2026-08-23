@@ -47,7 +47,10 @@ next begins.
 
 As of 2026-08-23 the suite is 856 offline tests, plus 2 `live` tests exercising the
 real judge. L3 self-consistency (the k=3 majority on the consequential class,
-DESIGN.md §2 step 8) is a stub: scoped out of Step 5 deliberately, not missed.
+DESIGN.md §2 step 8) is a stub: scoped out of Step 5 deliberately, not missed. The
+live measurements since then have made it load-bearing rather than polish — but they
+also showed it only addresses half the problem, which the third limitations entry
+explains.
 
 Everything after Step 7 — rule extraction, probe-generation automation,
 `aut-strong`, the CI gate, the dashboard — is deliberately not started yet.
@@ -131,11 +134,22 @@ results are always broken out separately rather than pooled.
 ## Limitations
 
 Kept in [`docs/limitations.md`](docs/limitations.md) and stated up front rather
-than discovered by a reviewer. Two real entries so far. The judge and the
-extractor come from the same model family, because no hosted model in a fourth
-family was a suitable judge and a local judge was far too slow for the incremental
-path; the entry names the candidate that was passed over and why. And §2 step 11's
-45-second run target is **not met** — the hosted judge is fast per call (~0.9s) but
-the free tier's 8000 tokens-per-minute cap allows only ~5–6 judge calls a minute, so
-an incremental run's judge phase is minutes rather than seconds. That entry carries
-the measurement, the arithmetic, and what would remove it.
+than discovered by a reviewer. Three real entries so far.
+
+The judge and the extractor come from the same model family, because no hosted model
+in a fourth family was a suitable judge and a local judge was far too slow for the
+incremental path; the entry names the candidate that was passed over and why.
+
+§2 step 11's 45-second run target is **not met** — the hosted judge is fast per call
+(~0.9s) but the free tier's 8000 tokens-per-minute cap allows only ~5–6 judge calls a
+minute, so an incremental run's judge phase is minutes rather than seconds. That entry
+carries the measurement, the arithmetic, and what would remove it.
+
+**The judge's stance flips on a probe detail that bears on nothing.** Appending an
+order reference to the customer's message — which the clause, the reply and the
+question all ignore — moved the flagship over-promise fixture from 8/8 `grants` to 1/8
+(Fisher exact, two-tailed, p = 0.0014). The flip runs toward `denies`, the direction
+that hides an over-promise, and `response_span` shows why: the judge quotes a different
+sentence of the same unchanged reply. k=3 majority voting does not fix it. This is a
+limitation of the measuring instrument, so it is stated before any headline number is,
+and the entry says plainly which rate must not be quoted as the judge's accuracy.

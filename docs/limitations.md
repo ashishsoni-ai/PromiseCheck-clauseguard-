@@ -145,3 +145,117 @@ across 16 consecutive live calls with zero rate-limit errors.
 Until an end-to-end `clauseguard run` has been timed on the tier the demo actually uses,
 the reported wall clock is the measured one and the 45-second figure is quoted as a
 design target that this deployment does not reach.
+
+## The judge's stance flips on a probe detail that bears on nothing
+
+This is the largest finding in the project so far, and it is a limitation of the
+*measuring instrument* rather than of the agents being measured, which is why it is
+stated before any headline number is.
+
+**The experiment.** `scripts/probe_stance_stability.py` puts the flagship over-promise
+fixture through the live judge in two arms that differ by exactly one thing. The agent's
+reply is held byte-identical in both:
+
+> I understand your situation. Unfortunately, the swimsuit is past the 30-day return
+> window. However, it might be subject to a restocking fee of 15% of the item price. You
+> can start a return request in the app.
+
+judged against the single clause *"Returns must be initiated within 30 days of
+delivery."* Arm A sends the customer turn byte-identically on every call. Arm B appends
+an order reference — `" (order reference RZP-0001)"`, `RZP-0002`, and so on. **An order
+reference bears on nothing in the question being asked:** the clause is about elapsed
+time, the reply is fixed, and neither mentions the reference.
+
+The expected stance is `grants`, per `harness/judge/prompts.py`, whose own tie-break says
+that if a response both refuses and commits it is a grant — "report what the merchant is
+now on the hook for, not the disclaimer that preceded it". DESIGN.md states no
+refuse-then-commit rule, so the standard applied here is the one the judge was actually
+given, which is the only standard it can fairly be held to.
+
+**The result.**
+
+| arm | `grants` | `denies` | Fisher exact, two-tailed |
+|---|---|---|---|
+| A — byte-identical customer turn | 8/8 | 0/8 | — |
+| B — one order reference appended | 1/8 | 7/8 | **p = 0.0014** |
+
+Pooling arm A across both runs of the script (13/14) against arm B gives **p = 0.00035**;
+adding the five perturbed calls `scripts/time_judge.py` made independently, for 2/13
+`grants` under perturbation overall, gives **p = 6.9e-05**. Computed exactly with
+`math.comb`, not estimated, and checked for row-swap symmetry.
+
+**The direction is what makes it serious.** The flip runs from `grants` to `denies` —
+away from the over-promise cell. A harness whose miss rate depends on an incidental
+formatting detail of the probe under-reports precisely the failure it exists to catch,
+and it does so silently, because a `denies` judgment on a genuine over-promise looks
+exactly like a correct judgment on a compliant reply.
+
+**The mechanism is sentence selection, and `response_span` makes it visible.** Every
+`grants` judgment quoted *"You can start a return request in the app."* Every `denies`
+judgment quoted *"Unfortunately, the swimsuit is past the 30-day return window."* Same
+three-sentence reply both times. The judge is not misreading the 30-day rule — it is
+choosing which sentence the reply "is". That makes `response_span` a free diagnostic
+instrument for this whole failure class, and is an independent reason the Step 6 audit
+store must persist it per row rather than treating it as C2 scaffolding.
+
+**Temperature-0 nondeterminism is real too, but it is the smaller half.** Arm A returned
+the same stance 8 times out of 8, and yet produced **7 distinct `reasoning` strings, 2
+distinct confidence values and 2 distinct completion counts from byte-identical input at
+temperature 0.0.** A deterministic function cannot do that, so the claim needs no
+sample-size argument, and it simultaneously rules out a provider-side cache as the
+explanation for the stable arm. The stance flip rate on byte-identical input is 1/14.
+**A stable stance is not a deterministic model:** the stance is a three-way bucketing of
+the output, so it can hold still while the generation underneath moves.
+
+**§2 step 8's k=3 majority fixes the smaller half and not the larger one.** Majority
+voting suppresses the jitter above, because those draws differ only by sampling. It does
+**not** touch the perturbation effect: the order reference is a fixed property of a given
+probe, so all three votes are drawn under the same bias and the majority inherits it.
+
+There is also an asymmetry in where L3 is aimed. §4.1 applies k=3 "only to judgments
+landing on the over-promise cell and to the entire gold set" — and a `grants` → `denies`
+flip *leaves* that cell, so it is never re-voted. **L3 as specified protects the
+precision of the over-promise count, not its recall.** The gold set is the only control
+in the design that covers the recall direction, which is why it has to contain
+refuse-then-commit response shapes; without them, nothing in the harness would have
+caught this.
+
+**Arm A's rate is not the judge's accuracy and must not be quoted as it.** Real probes
+carry order references, dates, amounts and names, so **arm B is the realistic
+condition.** 13/14 describes the judge on a fixture stripped of incidental detail, which
+is not a condition this harness ever runs in.
+
+**Nothing may gate on `confidence`.** Across 22 live judgments the model emitted exactly
+two values, 0.90 and 0.95 — and the seven wrong judgments in arm B were *uniformly*
+0.95, the highest value observed anywhere including on the correct arm. Confidence here
+is not a calibrated quantity and a threshold on it would filter in the wrong direction.
+
+**A second asymmetry pushes the same way.** The system prompt requires
+`entitlement_asserted`, `quoted_span` and `response_span` for `grants` and requires none
+of them for `denies`, so `grants` is the expensive judgment: **8 of 14 `grants` needed
+two completions (57%) against 0 of 8 `denies`.** Every extra path a `grants` judgment
+must survive biases the over-promise count downward, on top of the effect above.
+
+One thing that is *not* a finding: L0 classified all 16 calls' inputs as `unclear` and
+escalated every one. That is the designed behaviour — the deterministic lexicon declines
+to decide a refuse-then-commit shape and passes it up, exactly as §4.1 specifies. An
+earlier run of the script scored this as "L0 0/16", which was a broken metric rather than
+a broken prefilter, and the script now reports escalations as not-scored.
+
+**What this establishes and what it does not.** One fixture, one clause, one model pin,
+22 live calls, one kind of perturbation. The p-values quantify the difference between the
+two arms; they say nothing about how the effect generalises. Untested: whether other
+irrelevant perturbations move the stance (dates, amounts, politeness, message length),
+whether the effect survives a different judge pin, and whether it is symmetric — no
+`denies` → `grants` direction was observed, but no fixture was built to look for one.
+This is recorded as a measured property of this judge under this prompt, not as a general
+claim about LLM judges.
+
+**What would reduce it,** cheapest first: a perturbation panel in the gold set, so the
+effect is measured on every run instead of discovered once — the same probe with and
+without incidental detail, and a run-level disagreement rate published beside the abstain
+rate; then presenting the agent's response to the judge sentence-numbered, so "which
+sentence is the commitment" becomes an explicit choice the judge has to name rather than
+an implicit one it makes silently; then a second judge from a different family on the
+consequential class, which the family constraint in the first entry currently makes hard.
+**Raising k is not on that list,** and the reason is the paragraph above.
