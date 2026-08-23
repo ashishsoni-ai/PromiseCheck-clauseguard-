@@ -90,9 +90,13 @@ ollama pull mistral:7b            # adversary
 ```
 
 The extractor and the judge are hosted on Groq, which is what `GROQ_API_KEY` is
-for. The judge ran locally for part of 2026-08-23 and moved back: a local 8B judge
-measured ~11.7s per call on the development machine, and the judge is the only role
-on the incremental path, where §2 step 11 asks for under 45 seconds end to end.
+for. The judge ran locally for part of 2026-08-23 and moved back, because the judge
+is the only role on the incremental path and a local 8B judge measured ~11.7s per
+call on the development machine. Hosted, it measures ~0.9s per call — but that does
+not deliver §2 step 11's 45-second target, because the free tier caps this model at
+8000 tokens per minute and a judge call costs 1152–2178 of them. The binding
+constraint is a token quota, not latency; `docs/limitations.md` has the arithmetic
+and this project does not claim the 45-second figure.
 
 Check that what the config pins still exists before a run — provider inventory
 expires without warning:
@@ -127,7 +131,11 @@ results are always broken out separately rather than pooled.
 ## Limitations
 
 Kept in [`docs/limitations.md`](docs/limitations.md) and stated up front rather
-than discovered by a reviewer. The first entry is a real one: the judge and the
+than discovered by a reviewer. Two real entries so far. The judge and the
 extractor come from the same model family, because no hosted model in a fourth
-family was a suitable judge and a local judge missed the §2 step 11 latency target.
-The entry names the candidate that was passed over and why.
+family was a suitable judge and a local judge was far too slow for the incremental
+path; the entry names the candidate that was passed over and why. And §2 step 11's
+45-second run target is **not met** — the hosted judge is fast per call (~0.9s) but
+the free tier's 8000 tokens-per-minute cap allows only ~5–6 judge calls a minute, so
+an incremental run's judge phase is minutes rather than seconds. That entry carries
+the measurement, the arithmetic, and what would remove it.

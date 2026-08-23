@@ -143,6 +143,34 @@ __all__ = [
 #: be slow - so the judge is the one role whose latency is load-bearing, and it was the one
 #: sitting on the slowest hardware available.
 #:
+#: WHAT THE HOSTED JUDGE ACTUALLY BOUGHT, MEASURED AFTERWARDS BY `scripts/time_judge.py`,
+#: AND WHY IT IS STILL NOT 45 SECONDS
+#: Per call the move was a win, and a larger one than was first claimed here: min 0.88s,
+#: median 0.92s, max 1.67s, with imports warmed outside the timed section. Roughly 13x faster
+#: than the local pin. An intermediate figure of ~12-16s per call briefly appeared in this
+#: repo and is RETRACTED: it came from dividing a two-test pytest wall clock by two, and that
+#: wall clock contained a 10.95s `litellm` + `instructor` import paid once per PROCESS rather
+#: than once per call - the same mistake as dividing a cold model load by the number of tests
+#: that followed it. Do not reintroduce it.
+#:
+#: But per-call latency is not the binding constraint, and the 45-second target is NOT met on
+#: this tier, so nothing above should be read as claiming it. Groq's `on_demand` tier caps
+#: this model at 8000 tokens per minute, and a single judge call requests 1152-2178 tokens
+#: depending on whether C2's retry fires - which for a `grants` judgment it usually does,
+#: since `grants` is the one stance the system prompt requires spans for. That is ~5-6 calls
+#: per minute regardless of how fast any one of them returns. Thirty post-L0 probes at ~2200
+#: tokens is ~66,000 tokens, so roughly eight minutes of deliberate waiting, and step 8's k=3
+#: on the consequential class is worse. Step 6's "semaphore of 8" cannot rescue it: 6 of 6
+#: concurrent calls failed inside 0.25s with `RateLimitError`, because a concurrency cap does
+#: not model a token budget. What that path needs is a token-budget-aware limiter plus a 429
+#: backoff honouring the delay the provider states in the error body; neither exists yet, and
+#: `SCHEMA_REPAIR_RETRIES` below is not it.
+#:
+#: So the decision to go hosted rests on role placement - the argument above, which does not
+#: depend on the quota and survives it. The 45-second claim does not rest on anything yet.
+#: `docs/limitations.md` carries the arithmetic; do not write "under 45 seconds" into any
+#: report until a real end-to-end run has been timed on the tier the demo will use.
+#:
 #: The local pin was unreliable for a related reason, and the two facts share a cause: 6GB of
 #: VRAM does not comfortably hold a 4.9GB Q4 8B alongside a 4096-token KV cache, so the first
 #: load attempt died during CUDA init and Ollama retried with layers spilled to CPU - which
