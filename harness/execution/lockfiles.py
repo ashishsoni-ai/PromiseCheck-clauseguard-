@@ -294,6 +294,29 @@ def load_probes(path: str | Path = DEFAULT_PROBES_LOCK) -> ProbesLock:
     )
 
 
+def _write_json(path: Path, payload: dict) -> None:
+    """Write a lockfile as UTF-8 with LF endings, whatever host we are on.
+
+    `newline="\\n"` is not load-bearing for any digest today, and it is worth
+    being precise about why rather than copying the reason from the other
+    writers. `rules_digest` hashes `rule_version()` over parsed models, and
+    `_read_envelope` reads through universal newlines before `json.loads`, so
+    CRLF collapses on the way in and the digest is identical either way.
+
+    It is here for two other reasons. Committed evidence should be
+    byte-identical across hosts, because the moment anything does checksum
+    these files - a gate, a signature, a reviewer diffing two clones - CRLF
+    turns into the cross-host bug already found once in `loaders.py`. And
+    without it `git add` warns on every commit, which is how a repo teaches
+    itself to skim past the warning that does matter.
+    """
+    path.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+
 def write_rules(
     path: str | Path,
     *,
@@ -320,7 +343,7 @@ def write_rules(
         "authored_by": authored_by,
         "rules": [rule.model_dump(mode="json") for rule in rules],
     }
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", "utf-8")
+    _write_json(path, payload)
     return path
 
 
@@ -344,5 +367,5 @@ def write_probes(
         "authored_by": authored_by,
         "probes": [probe.model_dump(mode="json") for probe in ordered],
     }
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", "utf-8")
+    _write_json(path, payload)
     return path
