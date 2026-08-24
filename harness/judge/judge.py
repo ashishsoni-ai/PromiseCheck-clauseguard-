@@ -91,9 +91,10 @@ project most wants to be large, which is the opposite of putting a thumb on the 
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Final, Literal, Protocol, runtime_checkable
+from typing import Callable, Final, Literal, Protocol, runtime_checkable
 
 from harness.judge.prefilter import PrefilterResult, classify
 from harness.judge.prompts import (
@@ -101,6 +102,7 @@ from harness.judge.prompts import (
     build_judge_user_prompt,
     build_retry_user_prompt,
 )
+from harness.judge.ratelimit import RateLimitExhausted, call_with_rate_limit_retry
 from harness.judge.span_verify import verify_judgment
 from harness.schemas.clause import Clause
 from harness.schemas.judgment import AgentStance, Judgment
@@ -163,8 +165,12 @@ __all__ = [
 #: on the consequential class is worse. Step 6's "semaphore of 8" cannot rescue it: 6 of 6
 #: concurrent calls failed inside 0.25s with `RateLimitError`, because a concurrency cap does
 #: not model a token budget. What that path needs is a token-budget-aware limiter plus a 429
-#: backoff honouring the delay the provider states in the error body; neither exists yet, and
-#: `SCHEMA_REPAIR_RETRIES` below is not it.
+#: backoff honouring the delay the provider states in the error body. Both now exist - the
+#: pacing is `runner.py`'s `--judge-pace`, scaled by `judge_completions`, and the backoff is
+#: `harness/judge/ratelimit.py` - so a transient refusal no longer loses the run. Neither
+#: makes the run FASTER: pacing is chosen to stay under the budget, so the eight minutes
+#: above is the design, not a defect to be optimised away. `SCHEMA_REPAIR_RETRIES` below is
+#: still not it; it repairs malformed JSON and never waits.
 #:
 #: So the decision to go hosted rests on role placement - the argument above, which does not
 #: depend on the quota and survives it. The 45-second claim does not rest on anything yet.
@@ -287,10 +293,15 @@ class InstructorJudgeClient:
         self,
         model: str | None = None,
         timeout_s: float = DEFAULT_TIMEOUT_S,
+        *,
+        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self._model = model or resolve_judge_model()
         self._timeout_s = timeout_s
         self._client = None  # built lazily; importing litellm is slow and noisy
+        # Injected only so the offline suite can assert the 429 backoff arithmetic
+        # without elapsing real time. Nothing else should pass it.
+        self._sleep = sleep
 
     @property
     def model(self) -> str:
@@ -308,7 +319,8 @@ class InstructorJudgeClient:
 
     def judge(self, *, system: str, user: str, temperature: float) -> Judgment:
         client = self._ensure_client()
-        try:
+
+        def call() -> Judgment:
             return client.chat.completions.create(
                 model=self._model,
                 messages=[
@@ -320,7 +332,23 @@ class InstructorJudgeClient:
                 max_retries=SCHEMA_REPAIR_RETRIES,
                 timeout=self._timeout_s,
             )
-        except Exception as exc:  # noqa: BLE001 - provider detail belongs in the message
+
+        # A 429 is retried HERE rather than by L1's retry-then-abstain control, and
+        # the reason is not convenience. L1's budget is about judgment validity, and
+        # the abstain rate built on it is a published metric (DESIGN.md 4.2); a quota
+        # refusal spent from that budget would make the number partly a measurement
+        # of Groq's tier. It also must not reach `judge_completions`, which paces the
+        # run - a rejected call burned no tokens and must not buy itself sleep. See
+        # harness/judge/ratelimit.py. `SCHEMA_REPAIR_RETRIES` above is unrelated: it
+        # repairs malformed JSON, and instructor does not treat a 429 as repairable.
+        try:
+            return call_with_rate_limit_retry(call, sleep=self._sleep)
+        except RateLimitExhausted as exc:
+            # Deliberately not flattened into the generic message below: the remedy
+            # is to wait or change tier, and an operator who reads "the judge failed"
+            # goes looking for a bug that is not there.
+            raise JudgeError(f"judge {self._model}: {exc}") from exc
+        except Exception as exc:  # noqa: BLE001 - detail belongs in the message
             raise JudgeError(f"judge {self._model}: {exc}") from exc
 
 

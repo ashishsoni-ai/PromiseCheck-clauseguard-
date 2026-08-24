@@ -130,17 +130,31 @@ fan-out with a semaphore of 8. Applied to the judge on this tier, **6 of 6 concu
 calls failed within 0.25 seconds each with `RateLimitError`** — a concurrency cap does
 not model a token budget, so a plain semaphore converts the quota into a burst of
 `JudgeError` and loses rows. (The semaphore is fine where §2 step 6 aims it, at the AUT
-calls, which are local.) A related gap found the same way: the judge path has **no 429
-backoff at all** — `SCHEMA_REPAIR_RETRIES` covers schema repair only — even though the
-error body states the exact wait to honour, e.g. `"Please try again in 10.559999999s"`.
+calls, which are local.) A related gap was found the same way and has since been closed:
+the judge path had **no 429 backoff at all** — `SCHEMA_REPAIR_RETRIES` covers schema
+repair only — even though the error body states the exact wait to honour, e.g. `"Please
+try again in 10.559999999s"`. `harness/judge/ratelimit.py` now honours that stated wait
+for up to three attempts. It is deliberately **not** a fix for this limitation: it stops
+a transient refusal from losing a row, and does nothing whatever about the per-minute
+cap. A run that needs eight minutes still needs eight minutes.
+
+The backoff sits *below* `judge()`'s return rather than inside L1's retry-then-abstain
+control, and that placement is load-bearing for the published numbers. §4.2 reports the
+abstain rate; if a quota refusal spent L1's budget, that figure would partly measure
+Groq's tier rather than the judge's behaviour. A 429 likewise never reaches
+`judge_completions`, which `runner.py` multiplies into the inter-probe pace — a rejected
+call burned no tokens and must not buy itself sleep it did not earn.
 
 **What would remove it,** cheapest first: a paid tier, which is a billing change and not
 a design change; fewer tokens per call, since the prompt is ~1150 tokens for a *single*
 clause and §4.1 allows two to four, so a real run is larger than what was measured; or a
 token-budget-aware rate limiter plus 429 backoff, which lets a run take the time the
 quota demands instead of failing — the honest version, and the one that keeps the number
-publishable. The pacing recipe that works today is **16.5s between calls**, verified
-across 16 consecutive live calls with zero rate-limit errors.
+publishable. **That last option is the one taken.** The pacing recipe is **16.5s between
+calls** (`DEFAULT_JUDGE_PACE_S`), verified across 16 consecutive live calls with zero
+rate-limit errors, and the backoff above catches what pacing misses. The consequence is
+stated rather than hidden: a 30-probe run takes roughly **eight minutes**, that is the
+design and not a defect to be optimised away, and it is the number that gets published.
 
 Until an end-to-end `clauseguard run` has been timed on the tier the demo actually uses,
 the reported wall clock is the measured one and the 45-second figure is quoted as a
