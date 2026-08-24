@@ -44,6 +44,33 @@ from harness.execution.lockfiles import (
 )
 
 
+def rewrite_as_crlf(path):
+    """Convert a written lockfile to CRLF in place, and prove it happened.
+
+    Read fully BEFORE opening for write. `open("wb")` truncates on open, so
+    the tempting one-liner
+
+        with p.open("wb") as fh:
+            fh.write(p.read_bytes().replace(b"\\n", b"\\r\\n"))
+
+    reads back the empty file it has just created and writes nothing. That
+    exact bug shipped in the first version of this module and produced a
+    zero-byte lockfile, so the test failed on "not valid JSON" instead of on
+    the property it was meant to check. Both assertions below exist to make
+    that failure mode impossible to mistake for a pass: the first would fire
+    on empty input, and on a set where the ids happened to compare equal a
+    silently-empty file would otherwise sail through.
+    """
+    raw = path.read_bytes()
+    assert raw, "nothing to convert - the file was truncated before it was read"
+    assert b"\r" not in raw, "the writer should have produced LF, so this is a real bug"
+
+    crlf = raw.replace(b"\n", b"\r\n")
+    path.write_bytes(crlf)
+    assert b"\r\n" in path.read_bytes(), "conversion did not reach the file"
+    return crlf
+
+
 @pytest.fixture
 def written_rules(tmp_path, sample_policy_document, basic_grant_rule):
     path = write_rules(
@@ -140,18 +167,13 @@ class TestDigestIsNewlineIndependent:
         every Windows-authored lockfile becomes a spurious staleness refusal.
         """
         lf_digest = load_rules(written_rules).digest
-
-        crlf = written_rules.read_bytes().replace(b"\n", b"\r\n")
-        assert b"\r\n" in crlf, "the fixture must actually be CRLF to prove anything"
-        with written_rules.open("wb") as handle:
-            handle.write(crlf)
-
+        rewrite_as_crlf(written_rules)
         assert load_rules(written_rules).digest == lf_digest
 
     def test_a_crlf_probes_lock_still_loads(self, written_probes):
         expected = [p.probe_id for p in load_probes(written_probes).probes]
-        with written_probes.open("wb") as handle:
-            handle.write(written_probes.read_bytes().replace(b"\n", b"\r\n"))
+        assert expected, "an empty probe set would make the comparison vacuous"
+        rewrite_as_crlf(written_probes)
         assert [p.probe_id for p in load_probes(written_probes).probes] == expected
 
 
