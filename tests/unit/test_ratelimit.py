@@ -1,4 +1,5 @@
-"""Tests for the judge's 429 detection and provider-stated backoff.
+"""Tests for the judge's transient-provider-failure retries: 429s and malformed
+tool calls.
 
 Everything here runs without litellm, without a key and without elapsed time,
 which is the whole point of `ratelimit.py` being a separate module: a 429 is
@@ -15,16 +16,27 @@ That is not cosmetic. Detection has three independent tells, and a fake called
 `FakeRateLimit` satisfies the class-name tell by accident - so the tests that
 mean to exercise the status code would have gone green without the status code
 ever being read. The first draft of this file had exactly that bug.
+
+The same discipline applies to the malformed-tool-call fakes below, for the
+opposite reason: that detection has exactly one positive tell, the literal token
+`tool_use_failed`, so a fake whose class name or message mentions it in passing
+would pass the negative tests for the wrong reason. The negatives here carry no
+such token unless the test is specifically about a status code vetoing one.
 """
 
 import pytest
 
 from harness.judge.ratelimit import (
     FALLBACK_WAITS_S,
+    MALFORMED_TOOL_CALL_ATTEMPTS,
+    MALFORMED_TOOL_CALL_WAIT_S,
     MAX_WAIT_S,
     RETRY_MARGIN_S,
+    MalformedToolCallExhausted,
     RateLimitExhausted,
+    call_with_malformed_tool_call_retry,
     call_with_rate_limit_retry,
+    is_malformed_tool_call,
     is_rate_limited,
     retry_after_s,
     wait_for,
@@ -37,6 +49,31 @@ GROQ_BODY = (
     "`openai/gpt-oss-20b` in organization `org_x` service tier `on_demand` on "
     ": Limit 8000, Used 7684, Requested 1152. Please try again in 4.3575s. "
     'Need more tokens?","type":"tokens","code":"rate_limit_exceeded"}}'
+)
+
+# Both real bodies, copied out of `runs.db` after the live run of 2026-08-24 lost
+# two rows to them. Different messages, one code, one class of failure: the model
+# was asked for a structured judgment and did not produce one the provider would
+# forward. The first is a truncated generation, the second is no generation at all.
+#
+# Kept whole, including the `failed_generation` payload, rather than trimmed to the
+# `code` the predicate actually greps for. A shortened fixture would still pass every
+# test here and would quietly stop being evidence of what the provider sends - and it
+# is the payload that shows what these two rows cost: a stance was decided, a clause
+# was cited, a confidence was set, and all of it was discarded for a missing brace.
+TRUNCATED_TOOL_CALL = (
+    "litellm.BadRequestError: GroqException - "
+    '{"error":{"message":"Failed to parse tool call arguments as JSON",'
+    '"type":"invalid_request_error","code":"tool_use_failed",'
+    '"failed_generation":"'
+    '{\\"name\\": \\"Judgment\\", \\"arguments\\": {\\"agent_stance\\":\\"grants\\",'
+    '\\"cited_clause_id\\":\\"acme-refunds:006:0dbae093\\",'
+    '\\"confidence\\":0.9,\\"entitlement_asserted\\":\\"refund\\"}"}}'
+)
+NO_TOOL_CALL_AT_ALL = (
+    "litellm.BadRequestError: GroqException - "
+    '{"error":{"message":"Tool choice is required, but model did not call a tool",'
+    '"type":"invalid_request_error","code":"tool_use_failed","failed_generation":""}}'
 )
 
 # An opaque message, for tests that must not pass via the message tell.
@@ -287,3 +324,180 @@ class TestRetryLoop:
                 raiser(FakeProviderError()), sleep=sleep, attempts=1
             )
         assert sleep.waits == []
+
+
+class SchemaRefusal(Exception):
+    """A 400 from the provider, shaped the way litellm hands one over.
+
+    Named for what happened rather than for what detects it: nothing in
+    "SchemaRefusal" contains `tool_use_failed`, so a test using it can only pass
+    through the message body it was given, which is the tell under test.
+    """
+
+    def __init__(self, message, status_code=400):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+class TestMalformedToolCallDetection:
+    @pytest.mark.parametrize(
+        "body",
+        [TRUNCATED_TOOL_CALL, NO_TOOL_CALL_AT_ALL],
+        ids=["truncated-generation", "no-generation"],
+    )
+    def test_both_real_bodies_are_recognised(self, body):
+        """Two different messages, one `code`. Parametrised over both because the
+        second was the one that returned nothing at all, and a predicate that only
+        handled the truncation case would have silently kept losing it."""
+        assert is_malformed_tool_call(SchemaRefusal(body))
+
+    def test_it_does_not_require_a_status_code(self):
+        """Whichever of litellm, instructor or httpx wrapped it last may not have
+        carried one forward, and a false negative here loses a row."""
+        assert is_malformed_tool_call(Exception(TRUNCATED_TOOL_CALL))
+
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            SchemaRefusal("context_length_exceeded: 8192 < 9001"),
+            SchemaRefusal("Invalid value for 'response_format'"),
+            SchemaRefusal("model `openai/gpt-oss-20b` does not exist", status_code=404),
+            TimeoutError("timed out"),
+            Exception(GROQ_BODY),
+        ],
+        ids=["context-length", "bad-request", "dead-model", "timeout", "rate-limit"],
+    )
+    def test_no_other_failure_is_retried_as_one(self, exc):
+        """THE POINT OF KEEPING THE PREDICATE NARROW. Three of these are 400s, and
+        every one of them is a harness defect: a prompt that outgrew the context
+        window, a malformed request, a model id that expired on someone else's
+        schedule. Retrying them would spend quota to learn nothing and then - because
+        exhausting these retries ABSTAINS rather than raises - file the bug away as
+        judicial humility. Crashing is strictly better."""
+        assert not is_malformed_tool_call(exc)
+
+    @pytest.mark.parametrize("status", [401, 403, 500, 502])
+    def test_an_explicit_non_400_status_vetoes_the_code(self, status):
+        """Same asymmetry `is_rate_limited` argues for at length. A body quoting
+        `tool_use_failed` under a 401 is not this failure in disguise, it is
+        something else entirely, and resampling it three times delays the real
+        answer by three generations."""
+        assert not is_malformed_tool_call(SchemaRefusal(TRUNCATED_TOOL_CALL, status))
+
+    def test_the_two_detectors_do_not_overlap(self):
+        """They lead to opposite endings - `JudgeError` for quota, an abstention for
+        a malformed tool call - and `judge()` nests them, so one body satisfying both
+        would make which ending you get depend on nesting order."""
+        for body in (TRUNCATED_TOOL_CALL, NO_TOOL_CALL_AT_ALL):
+            assert not is_rate_limited(SchemaRefusal(body))
+        assert not is_malformed_tool_call(FakeProviderError())
+
+
+class TestMalformedToolCallRetryLoop:
+    def test_a_call_that_succeeds_never_sleeps(self):
+        sleep = Recorder()
+        assert call_with_malformed_tool_call_retry(lambda: "ok", sleep=sleep) == "ok"
+        assert sleep.waits == []
+
+    def test_a_resample_can_recover_the_row(self):
+        """The case the whole change exists for: the truncation was transient, the
+        second sample parses, and no abstention is booked at all."""
+        calls = []
+
+        def flaky():
+            calls.append(1)
+            if len(calls) < 2:
+                raise SchemaRefusal(TRUNCATED_TOOL_CALL)
+            return "judged"
+
+        sleep = Recorder()
+        assert call_with_malformed_tool_call_retry(flaky, sleep=sleep) == "judged"
+        assert len(calls) == 2
+
+    def test_the_pause_is_flat_and_short(self):
+        """Not `FALLBACK_WAITS_S`, and not escalating. There is nothing to wait for:
+        no amount of sleeping makes the next sample better-formed, so a backoff curve
+        here would only lengthen a run that is already about eight minutes."""
+        sleep = Recorder()
+        with pytest.raises(MalformedToolCallExhausted):
+            call_with_malformed_tool_call_retry(
+                raiser(SchemaRefusal(TRUNCATED_TOOL_CALL)), sleep=sleep, attempts=3
+            )
+        assert sleep.waits == [MALFORMED_TOOL_CALL_WAIT_S] * 2
+
+    def test_it_does_not_sleep_after_the_final_attempt(self):
+        sleep = Recorder()
+        with pytest.raises(MalformedToolCallExhausted):
+            call_with_malformed_tool_call_retry(
+                raiser(SchemaRefusal(NO_TOOL_CALL_AT_ALL)), sleep=sleep, attempts=2
+            )
+        assert len(sleep.waits) == 1
+
+    def test_exhaustion_reports_the_attempts_and_keeps_the_cause(self):
+        """`attempts` is not decoration: `judge_response` adds it to
+        `judge_completions`, which paces the run. Unlike a 429, every attempt counted
+        here burned a generation against the token window, and pacing that cannot see
+        a burned generation is how a run walks into the rate limit it was paced to
+        avoid."""
+        sleep = Recorder()
+        with pytest.raises(MalformedToolCallExhausted) as caught:
+            call_with_malformed_tool_call_retry(
+                raiser(SchemaRefusal(TRUNCATED_TOOL_CALL)), sleep=sleep, attempts=3
+            )
+        exc = caught.value
+        assert exc.attempts == 3
+        assert isinstance(exc.last, SchemaRefusal)
+        assert isinstance(exc.__cause__, SchemaRefusal)
+
+    def test_the_message_says_it_is_neither_a_defect_nor_a_quota_refusal(self):
+        """It is the third thing, and an operator who cannot tell which of the three
+        they have goes looking in the wrong place: a defect means read the diff, a
+        quota refusal means wait or change tier, and this means the judge could not
+        answer."""
+        sleep = Recorder()
+        with pytest.raises(MalformedToolCallExhausted) as caught:
+            call_with_malformed_tool_call_retry(
+                raiser(SchemaRefusal(NO_TOOL_CALL_AT_ALL)), sleep=sleep, attempts=2
+            )
+        text = str(caught.value).lower()
+        assert "not a harness defect" in text
+        assert "not a quota refusal" in text
+        assert "abstains rather than being lost" in text
+
+    def test_anything_else_propagates_on_the_first_raise(self):
+        sleep = Recorder()
+        with pytest.raises(SchemaRefusal):
+            call_with_malformed_tool_call_retry(
+                raiser(SchemaRefusal("context_length_exceeded")), sleep=sleep
+            )
+        assert sleep.waits == []
+
+    def test_a_rate_limit_passes_straight_through_it(self):
+        """`judge()` nests the 429 budget INSIDE this one, so a `RateLimitExhausted`
+        surfacing here has already spent its own retries and must reach the operator
+        as itself. Flattening it would tell someone whose token budget is spent to go
+        and read the JSON."""
+        sleep = Recorder()
+        with pytest.raises(RateLimitExhausted):
+            call_with_malformed_tool_call_retry(
+                raiser(RateLimitExhausted(3, 12.0, FakeProviderError())), sleep=sleep
+            )
+        assert sleep.waits == []
+
+    def test_the_default_budget_allows_two_retries(self):
+        """The ruling was to retry "once or twice". Pinned as a number because the
+        cost is tokens, not seconds: every attempt spends 1152-2178 of the 8000 a
+        minute this tier allows, so raising it trades run latency for a recovery that
+        on the truncation case either works immediately or does not work at all."""
+        assert MALFORMED_TOOL_CALL_ATTEMPTS == 3
+
+        calls = []
+
+        def always_truncated():
+            calls.append(1)
+            raise SchemaRefusal(TRUNCATED_TOOL_CALL)
+
+        sleep = Recorder()
+        with pytest.raises(MalformedToolCallExhausted):
+            call_with_malformed_tool_call_retry(always_truncated, sleep=sleep)
+        assert len(calls) == MALFORMED_TOOL_CALL_ATTEMPTS

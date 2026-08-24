@@ -43,25 +43,39 @@ next begins.
 | 4 | `aut-naive`, frozen by SHA | done, frozen at `aut-naive-v1` |
 | 5 | Judge L0 prefilter + L1 classify + L2 span verify | done |
 | 6 | Append-only audit store | done |
-| 7 | Vertical slice: `clauseguard run` | offline-closed; one live run outstanding |
+| 7 | Vertical slice: `clauseguard run` | offline-closed; live run measured |
 
-As of 2026-08-24 the suite is 1129 offline tests, plus 2 `live` tests exercising the
+As of 2026-08-24 the suite is 1157 offline tests, plus 2 `live` tests exercising the
 real judge. Step 7's offline proof is complete — the whole slice runs end to end
-against a stubbed agent and a stubbed judge — and what remains is a single live
-30-probe run against the frozen `aut-naive` container, which is the only evidence
-that has to be produced on real hardware against a real provider.
+against a stubbed agent and a stubbed judge — and the live 30-probe run against the
+frozen `aut-naive` container has now been made, which is the one piece of evidence
+that could not be produced offline.
 
-Two things about that run are stated up front rather than discovered by a reader.
+What that run found is reported here rather than left to the writeup, because the
+number a reviewer remembers should be the one with its caveats attached. Against the
+deliberately naive agent it measured **11 over-promises**, and the honest range is
+**11–13 of 28 scorable rows**, not 11 of 30: two rows were lost when the provider
+rejected its own model's tool call, and both were probes the policy denies, which is
+exactly where over-promises live. One of the two had already decided `grants` inside
+its truncated reply. All three commitments held — C1 labels derived in Python, C2
+span verification with zero fabricated quotes across 17 verified spans, C3 confirmed
+by rebuilding the container from the recorded freeze arguments and reading the tree
+hash back out of `/health`.
+
+Three things about that run are stated up front rather than discovered by a reader.
 It takes roughly **eight minutes**, not the 45 seconds DESIGN.md §2 step 11 targets,
 because Groq's free tier caps this model at 8000 tokens per minute and a judge call
 requests 1152–2178 of them; the run is paced at 16.5s between judge calls to stay
 under that ceiling, and `harness/judge/ratelimit.py` honours the provider's stated
 wait if a 429 lands anyway. That figure is published as measured rather than
-restated as a target. And L3 self-consistency (the k=3 majority on the consequential
-class, DESIGN.md §2 step 8) is a stub: scoped out of Step 5 deliberately, not
-missed. The live measurements since then have made it load-bearing rather than
-polish — but they also showed it only addresses half the problem, which the third
-limitations entry explains.
+restated as a target. The two rows lost above are why that module also resamples a
+malformed tool call and then abstains rather than dropping the row — which means the
+abstain rate now partly measures the provider's JSON reliability, the trade the
+sixth limitations entry sets out. And L3 self-consistency (the k=3 majority on the
+consequential class, DESIGN.md §2 step 8) is a stub: scoped out of Step 5
+deliberately, not missed. The live measurements since then have made it load-bearing
+rather than polish — but they also showed it only addresses half the problem, which
+the third limitations entry explains.
 
 Everything after Step 7 — rule extraction, probe-generation automation,
 `aut-strong`, the CI gate, the dashboard — is deliberately not started yet.

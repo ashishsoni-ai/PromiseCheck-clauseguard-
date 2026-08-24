@@ -33,6 +33,12 @@ exists for exactly this) because the call is remote, expensive, and already spen
 - dropping the row would move the denominator of a published number with nothing
 recording that it had.
 
+One class of judge failure no longer arrives here at all: a persistent
+`tool_use_failed` now returns an abstention instead of raising, so it lands in
+the abstain rate rather than the error rate. That was a decision, made after a
+live run put two `expected=denies` rows in `judge_error` and out of every cell -
+see "WHAT THE ABSTAIN RATE IS ALLOWED TO MEAN" in `harness/judge/judge.py`.
+
 An agent failure aborts the run before anything is written. Nothing is lost by
 doing so: phase one is local, fast, and re-runnable, and no row has been
 committed yet. The alternative would be a row with an empty `agent_response`,
@@ -627,7 +633,11 @@ def build_row(judged: Judged, context: RowContext) -> AuditRow:
     The abstained case discards the rejected judgment even though L2 kept it for
     the human review queue. There is no field for it in 5.1, and Step 6 made
     adding a 39th field a test failure rather than a quiet drift, so it stays out
-    of the row and stays in the log.
+    of the row and stays in the log. The same absence covers the second abstention
+    cause - a provider that never forwarded a tool call - where there is no
+    rejected judgment to discard in the first place, and where the row is
+    consequently identical to an L2 abstention. Which of the two applied is a log
+    question, not a row question.
     """
     probe = judged.exchange.probe
     reply = judged.exchange.final

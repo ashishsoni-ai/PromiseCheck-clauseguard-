@@ -1326,8 +1326,9 @@ class TestTheAbstainedRow:
     ):
         """The distinction `AuditRow._an_error_is_not_an_abstention` exists for.
 
-        The abstain rate is published, so it may mean exactly one thing: a judgment
-        the harness rejected. Not a 429, not a bad key.
+        The abstain rate is published, so it may mean only one kind of thing: the
+        judge was asked and what came back could not be believed. Not a 429, not a
+        bad key.
         """
         judge = FakeJudge(a_fabricated_quote(), a_fabricated_quote())
 

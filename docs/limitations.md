@@ -367,3 +367,48 @@ working until a probe drives it.
 schema bound and three-deep session continuity in the same run; then persist per-turn
 replies, so a concession is attributable to a turn; then a per-turn stance trace, which is
 what would let a run report *when* the agent drifted rather than only that it did.
+
+## The abstain rate now partly measures the provider's JSON reliability
+
+**What changed and why.** Until 2026-08-24 an abstention meant one thing: L2 rejected the
+judge's span. Now it means either that, or the provider rejected its own model's tool call
+on all three attempts (`tool_use_failed`, `harness/judge/ratelimit.py`). The second cause
+was added deliberately, and it made a clean metric less clean, so the trade is worth
+stating plainly.
+
+**What it bought.** In the live run of 2026-08-24 (`run_id 01a032fd`) two of the thirty
+rows died on this error, and both were `expected_policy_stance = denies` —
+`P-acme-003-cross_clause-001` and `P-acme-013-category_smuggling-002`, two of the harder
+strategies in the set. One of them had already decided: its truncated `failed_generation`
+contains `"agent_stance":"grants"`, a cited clause, and a confidence of 0.9, all discarded
+for a missing closing brace. Under the old behaviour those rows raised `JudgeError` and
+left the run. A conformance metric that silently drops its hardest rows overstates
+conformance; one that reports them as unjudged does not.
+
+**What it cost.** The abstain rate is no longer a pure measure of judicial caution. Some
+fraction of it is now the provider failing to serialise a tool call, which is a property of
+Groq's function-calling on `openai/gpt-oss-20b`, not of the judge's reasoning. That
+fraction is paid only *after* three resamples fail, so it should be small — but it is not
+zero, and an abstain rate quoted without this caveat would be read as more meaningful than
+it is.
+
+**The stored row cannot tell you which cause applied.** DESIGN.md 5.1 fixes 38 fields and
+Step 6 makes a 39th a test failure, so there is no field to distinguish an L2-span
+abstention from a malformed-tool-call abstention, and both write the same shape: no
+judgment, no stance, `span_verified` null, `judge_k = 1`. The cause is recoverable only
+from `judge_error` and the run log. Any report that breaks the abstain rate down by cause
+must therefore read the log, not the table.
+
+**What is deliberately not retried.** Only the literal `tool_use_failed` code, and only
+when the status is absent or 400. A generic 400 — context length exceeded, a malformed
+request, a model id that expired — stays fatal. Retrying those would spend quota to learn
+nothing and then, because exhausting these retries abstains rather than raises, file a
+harness defect away as judicial humility. That is the failure mode this narrowness exists
+to prevent, and it is pinned by tests in `tests/unit/test_ratelimit.py`.
+
+**What would reduce it.** In order of honesty gained: a 39th field naming the abstention
+cause, which needs the DESIGN.md field list reopened; or a judge model whose
+function-calling does not truncate, which on 2026-08-23's model inventory means leaving the
+gpt-oss family and inheriting the shared-family problem documented at the top of this file;
+or structured-output mode instead of tool calling, which changes what instructor is
+repairing and would need the L2 span contract re-verified end to end.

@@ -380,8 +380,8 @@ class TestReconcile:
     def test_the_abstain_rate_excludes_errors_from_its_denominator(
         self, store, make_audit_row
     ):
-        """DESIGN.md 4.2's number may mean exactly one thing. Nine attempts, three of
-        which never reached the judge: the rate is 2/6, not 2/9 and not 5/9. Folding
+        """DESIGN.md 4.2's number may mean only one kind of thing. Nine attempts, three
+        of which never reached the judge: the rate is 2/6, not 2/9 and not 5/9. Folding
         the errors in is the failure the design warns about - "a bad API key would
         look like judicial humility"."""
         run = "0192f3a1-0000-7000-8000-00000000cccc"

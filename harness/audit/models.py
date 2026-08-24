@@ -284,16 +284,29 @@ class AuditRow(BaseModel):
         """THE LOAD-BEARING INVARIANT IN THIS FILE.
 
         DESIGN.md 4.2 publishes the abstain rate, and the rule the judge was built
-        to - `harness/judge/judge.py` - is that an abstention may mean exactly one
-        thing: a judgment whose span was rejected twice by L2. Transport failure,
-        an unparseable reply and missing candidate clauses all raise `JudgeError`
-        instead, precisely so they cannot inflate that number. The design's own
-        warning is that "a bad API key would look like judicial humility"; it has
-        now failed loudly three times for three unrelated causes (a decommissioned
-        model returning 404, a local CUDA crash, and a Groq rate limit), and each
-        time the separation held.
+        to - `harness/judge/judge.py` - is that an abstention may mean only one
+        kind of thing: the judge was asked and what came back could not be
+        believed. Two conditions qualify. A judgment whose spans L2 rejected
+        twice, and a provider that rejected its own model's tool call on every
+        attempt (`code: tool_use_failed`) so that L2 was never given anything to
+        reject. Transport failure, quota exhaustion, an uncoercible reply and
+        missing candidate clauses all raise `JudgeError` instead, precisely so
+        they cannot inflate that number.
 
-        This validator is where that separation stops being a convention and
+        The design's own warning is that "a bad API key would look like judicial
+        humility", and the separation has now caught four unrelated causes: a
+        decommissioned model returning 404, a local CUDA crash, a Groq rate limit,
+        and a Groq `tool_use_failed`. It held every time. Reviewing what it caught
+        is what showed the fourth had been misfiled - a malformed tool call is the
+        judge failing to answer, not the harness failing to run - so on 2026-08-24
+        that one moved to the abstention side, after retries, by decision rather
+        than by drift.
+
+        Note what the row therefore cannot tell you: which of the two abstention
+        causes applied. 5.1 has no field for it, Step 6 made a 39th field a test
+        failure, and the cause is in the log instead.
+
+        This validator is where the separation stops being a convention and
         becomes a constraint on the stored data. A row may be an error or an
         abstention or a judgment - never two of those at once.
         """

@@ -14,11 +14,28 @@ far stronger claim than one that answers everything." That claim only holds if a
 abstention means one thing - the judge could not produce evidence that survived
 mechanical checking.
 
-So exactly one condition books an abstention: L2 rejected the judgment twice. Everything
-else raises `JudgeError`:
+Two conditions book an abstention, and they are one rule read at two depths: the judge
+was asked, and what came back could not be believed.
 
-* the provider timed out, refused, or returned nothing
-* the response could not be coerced into a `Judgment`
+* L2 rejected the judgment's spans twice - DESIGN.md 4.1's own retry-then-abstain; or
+* the provider rejected its own model's tool call on every attempt, so there was no
+  judgment to check at all (`code: tool_use_failed`, retried in `ratelimit.py` first).
+
+The second was added on 2026-08-24 and it is a deliberate trade, not a widening by
+accident. Before it, such a row was *lost*: `judge_error` set, no stance, no matrix cell.
+The live 30-probe run lost two rows that way, both on `expected=denies` probes, which is
+exactly where over-promises live - and one of the two had already emitted
+`agent_stance: "grants"` inside its truncated `failed_generation`, so the row that
+silently vanished was an over-promise. A metric that drops its hardest rows without
+saying so is worse than one that admits it could not read them. The price is that the
+abstain rate now partly measures the provider's JSON reliability, and it is paid only
+after the retries fail.
+
+Everything else still raises `JudgeError`:
+
+* the provider timed out, refused for quota, or returned nothing
+* a reply arrived and still could not be coerced into a `Judgment` - a schema failure is
+  instructor's to repair (`SCHEMA_REPAIR_RETRIES`), not ours to abstain over
 * no candidate clauses were supplied
 
 None of those are the judge declining to guess; they are a missing measurement. Booking
@@ -27,6 +44,15 @@ construction look like judicial humility - and would quietly deflate the headlin
 because abstentions are excluded from them. A crashed run is obvious and gets fixed; a
 run that silently reports 30% abstention because a key expired is a lie with a plausible
 story attached.
+
+WHAT THE STORED ROW CANNOT TELL YOU, AND WHY IT STAYS THAT WAY
+-------------------------------------------------------------
+The two abstention causes above are indistinguishable in the audit row. DESIGN.md 5.1 has
+no field for the reason, Step 6 made a 39th field a test failure rather than a quiet
+drift, and `build_row` already discards the rejected judgment on the same grounds. So the
+cause lives in the console line and the log, and anyone quoting an abstain rate above a
+point or two has to look there before attributing it to the judge's humility. Written
+down because it is obvious while implementing it and invisible six weeks later.
 
 WHY AN UNVERIFIABLE STANCE IS THROWN AWAY WHOLE
 ----------------------------------------------
@@ -102,7 +128,12 @@ from harness.judge.prompts import (
     build_judge_user_prompt,
     build_retry_user_prompt,
 )
-from harness.judge.ratelimit import RateLimitExhausted, call_with_rate_limit_retry
+from harness.judge.ratelimit import (
+    MalformedToolCallExhausted,
+    RateLimitExhausted,
+    call_with_malformed_tool_call_retry,
+    call_with_rate_limit_retry,
+)
 from harness.judge.span_verify import verify_judgment
 from harness.schemas.clause import Clause
 from harness.schemas.judgment import AgentStance, Judgment
@@ -265,8 +296,13 @@ class JudgeError(RuntimeError):
     """The judge could not be run to completion.
 
     Deliberately *not* an abstention - see "WHAT THE ABSTAIN RATE IS ALLOWED TO MEAN" in
-    the module docstring. Raised for transport failures, unparseable replies, and missing
-    candidate clauses.
+    the module docstring. Raised for transport failures, quota exhaustion, unparseable
+    replies, and missing candidate clauses.
+
+    One exception to "unparseable replies", and it is narrow: a persistent
+    `tool_use_failed` abstains instead, because there the provider refused to forward its
+    own model's output and no reply reached us to be parsed. That is a judge that could
+    not answer, not a harness that could not run.
     """
 
 
@@ -341,8 +377,29 @@ class InstructorJudgeClient:
         # run - a rejected call burned no tokens and must not buy itself sleep. See
         # harness/judge/ratelimit.py. `SCHEMA_REPAIR_RETRIES` above is unrelated: it
         # repairs malformed JSON, and instructor does not treat a 429 as repairable.
-        try:
+        #
+        # Nor does it treat a `tool_use_failed` as repairable, which is why that has
+        # its own budget here. The provider raises that 400 BEFORE instructor gets
+        # anything to validate, so `max_retries` never engages - the live run's error
+        # text reads "Max retries exceeded. Total attempts: 1" with max_retries set
+        # to 2, which is what a retry that never happened looks like.
+        #
+        # The two are nested rather than sequential, and the order is load-bearing:
+        # the 429 budget sits INSIDE the resample budget, so each fresh sample gets
+        # the provider's full stated backoff and the worst case is three attempts
+        # that burn tokens wrapped in refusals that burn none. Inverted, a single 429
+        # would restart the resample loop and one row could cost nine generations.
+        def sampled() -> Judgment:
             return call_with_rate_limit_retry(call, sleep=self._sleep)
+
+        try:
+            return call_with_malformed_tool_call_retry(sampled, sleep=self._sleep)
+        except MalformedToolCallExhausted:
+            # The only exception here that leaves unwrapped, because it is the only
+            # one L1 is meant to act on rather than report. A JudgeError would lose
+            # the attempt count `judge_completions` needs and turn the abstention
+            # back into the lost row this path exists to prevent.
+            raise
         except RateLimitExhausted as exc:
             # Deliberately not flattened into the generic message below: the remedy
             # is to wait or change tier, and an operator who reads "the judge failed"
@@ -433,6 +490,50 @@ def _prefilter_outcome(result: PrefilterResult) -> JudgeOutcome:
     )
 
 
+def _malformed_tool_call_outcome(
+    result: PrefilterResult,
+    *,
+    model: str,
+    completions: int,
+    exc: MalformedToolCallExhausted,
+) -> JudgeOutcome:
+    """Package an abstention for a provider that never forwarded a tool call.
+
+    Shaped to be the same kind of thing as the L2 abstention below it, because
+    `build_row` writes one abstention row and should not need to know which cause
+    produced it. Three fields differ from that case and each says something:
+
+    `judgment` is None, not a rejected judgment - there is nothing to put in the human
+    review queue except the provider's complaint, which goes in `violations`. The
+    truncated `failed_generation` inside that message is often readable and sometimes
+    even carries a stance, but reconstructing a judgment from a fragment the provider
+    refused to forward would be exactly the unverified assertion C2 exists to forbid.
+
+    `span_verified` is None rather than False: False means a span was offered and
+    rejected, and no span was ever offered here.
+
+    `judge_completions` includes every burned attempt, because they all generated
+    tokens - see `MalformedToolCallExhausted.attempts`.
+    """
+    return JudgeOutcome(
+        source="llm",
+        prefilter=result,
+        agent_stance=None,
+        judgment=None,
+        span_verified=None,
+        abstained=True,
+        violations=(str(exc),),
+        judge_model=model,
+        # 1, not 0, and deliberately the same as the L2 abstention. `judge_k` records
+        # whether a model was engaged, and one was - repeatedly. Zero is L0's value
+        # and means "no model ran", so reusing it here would make the count mean two
+        # incompatible things and leave `judge_model` as the only way to tell an L0
+        # row from a provider abstention.
+        judge_k=1,
+        judge_completions=completions,
+    )
+
+
 def judge_response(
     *,
     probe_turns: Sequence[str],
@@ -445,9 +546,10 @@ def judge_response(
 
     Note what is not a parameter: the expected policy stance. See the module docstring.
 
-    Raises `JudgeError` on transport or schema failure, or if no candidate clauses were
-    supplied. Returns an outcome with `abstained=True` only when L2 rejected the
-    judgment's spans twice.
+    Raises `JudgeError` on transport failure, quota exhaustion, an uncoercible reply, or
+    if no candidate clauses were supplied. Returns an outcome with `abstained=True` in
+    the two cases the module docstring lists: L2 rejected the judgment's spans twice, or
+    the provider never forwarded a tool call at all.
     """
     prefilter_result = classify(agent_response)
     if prefilter_result.is_terminal:
@@ -480,9 +582,22 @@ def judge_response(
     # retry stays at the same temperature because it is not a resample - the prompt
     # itself changed, so a different answer does not require a different temperature.
     for attempt in (1, 2):
-        judgment = active.judge(
-            system=JUDGE_SYSTEM_PROMPT, user=user_prompt, temperature=temp
-        )
+        try:
+            judgment = active.judge(
+                system=JUDGE_SYSTEM_PROMPT, user=user_prompt, temperature=temp
+            )
+        except MalformedToolCallExhausted as exc:
+            # Abstain immediately rather than falling through to attempt 2. The retry
+            # prompt names an L2 violation, and there is no violation to name - the
+            # provider never gave L2 anything to reject. `ratelimit.py` has already
+            # resampled this prompt up to three times, so a fourth ask with a
+            # differently-worded preamble is not a new experiment, just more tokens.
+            return _malformed_tool_call_outcome(
+                prefilter_result,
+                model=active.model,
+                completions=completions + exc.attempts,
+                exc=exc,
+            )
         completions += 1
 
         verification = verify_judgment(

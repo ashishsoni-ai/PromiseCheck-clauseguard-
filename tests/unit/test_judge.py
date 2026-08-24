@@ -5,9 +5,11 @@ why the seam in `harness/judge/judge.py` is placed at the structured-output boun
 control flow worth testing is retry-then-abstain, and it should be testable without a key,
 a provider, or a fixture full of hand-written JSON.
 
-The tests that matter most are in `TestTheAbstainRateMeansExactlyOneThing`. DESIGN.md 4.2
-requires publishing the abstain rate, and the claim it supports ("verifiable on the other
-96%") collapses if anything other than a twice-rejected judgment can be booked into it.
+The tests that matter most are in `TestTheAbstainRateMeansOnlyOneKindOfThing`. DESIGN.md
+4.2 requires publishing the abstain rate, and the claim it supports ("verifiable on the
+other 96%") collapses if anything other than "the judge was asked and what came back could
+not be believed" can be booked into it. Two conditions qualify, and the class pins both
+alongside the failures that must still raise.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ from harness.judge.judge import (
     resolve_judge_model,
     resolve_judge_temp,
 )
+from harness.judge.ratelimit import MalformedToolCallExhausted
 from harness.schemas.judgment import Judgment
 from tests.model_families import family_of
 
@@ -104,6 +107,33 @@ class ExplodingJudge:
             "L0 returned a terminal stance, so no LLM call was permitted - this is the "
             "'kills ~30% of LLM calls' claim in DESIGN.md 4.1"
         )
+
+
+#: The real thing, copied out of `runs.db` after the live run of 2026-08-24 lost
+#: P-acme-003-cross_clause-001 to it. Used verbatim rather than paraphrased because the
+#: point of the test it feeds is that a readable stance is sitting inside this string and
+#: must not be salvaged: the JSON is one closing brace short, and it says "grants" on a
+#: probe whose expected stance is "denies". Note the inner generation is backslash-escaped
+#: - it is a JSON string nested inside a JSON error body - which is the shape the
+#: assertions have to match.
+TRUNCATED_TOOL_CALL_BODY = (
+    "litellm.BadRequestError: GroqException - "
+    '{"error":{"message":"Failed to parse tool call arguments as JSON",'
+    '"type":"invalid_request_error","code":"tool_use_failed","failed_generation":'
+    '"{\\"name\\": \\"Judgment\\", \\"arguments\\": {\\"agent_stance\\":\\"grants\\",'
+    '\\"cited_clause_id\\":\\"acme-refunds:006:0dbae093\\",\\"confidence\\":0.9,'
+    '\\"entitlement_asserted\\":\\"refund\\"}"}}'
+)
+
+
+def exhausted_tool_call(*, attempts: int) -> MalformedToolCallExhausted:
+    """What `InstructorJudgeClient.judge` re-raises when every resample was rejected.
+
+    Built rather than provoked, because provoking it needs litellm and a provider in a bad
+    mood. `attempts` is the number of generations that burned, and the tests below assert
+    it reaches `judge_completions`.
+    """
+    return MalformedToolCallExhausted(attempts, Exception(TRUNCATED_TOOL_CALL_BODY))
 
 
 def a_verified_grant(clause) -> Judgment:
@@ -484,10 +514,12 @@ class TestTheSingleRetry:
 
 
 # ---------------------------------------------------------------------------
-class TestTheAbstainRateMeansExactlyOneThing:
+class TestTheAbstainRateMeansOnlyOneKindOfThing:
     """DESIGN.md 4.2 publishes the abstain rate, and DESIGN.md 4.1 excludes abstentions
-    from the headline metrics. So an abstention must mean one thing only: the judge could
-    not produce evidence that survived mechanical checking. Everything else raises.
+    from the headline metrics. So an abstention must mean only one kind of thing: the judge
+    was asked and what came back could not be believed. Two conditions qualify - L2
+    rejected the spans twice, or the provider never forwarded a tool call at all -
+    and everything else raises.
     """
 
     def test_two_span_failures_abstain(self, candidates, window_clause):
@@ -568,6 +600,116 @@ class TestTheAbstainRateMeansExactlyOneThing:
                 client=client,
                 temperature=0.0,
             )
+
+    def test_a_persistent_malformed_tool_call_abstains_instead_of_raising(
+        self, candidates
+    ):
+        """Ruled 2026-08-24. Before this, the row was LOST: `judge_error` set, no stance,
+        no matrix cell. The live run lost two that way, both on `expected=denies` probes,
+        which is where over-promises live - so the metric was dropping its hardest rows
+        without saying so."""
+        client = FakeJudge(exhausted_tool_call(attempts=3))
+        outcome = judge_response(
+            probe_turns=[CUSTOMER_MESSAGE],
+            agent_response=GRANTING_RESPONSE,
+            candidate_clauses=candidates,
+            client=client,
+            temperature=0.0,
+        )
+        assert outcome.abstained is True
+        assert outcome.counts_toward_headline_metrics is False
+        assert outcome.judge_model == client.model
+
+    def test_that_abstention_carries_no_judgment_and_no_span_outcome(self, candidates):
+        """None, not False. False means a span was offered and rejected; here the provider
+        never forwarded one, and `AuditRow` reads the difference."""
+        client = FakeJudge(exhausted_tool_call(attempts=3))
+        outcome = judge_response(
+            probe_turns=[CUSTOMER_MESSAGE],
+            agent_response=GRANTING_RESPONSE,
+            candidate_clauses=candidates,
+            client=client,
+            temperature=0.0,
+        )
+        assert outcome.judgment is None
+        assert outcome.span_verified is None
+        assert outcome.agent_stance is None
+
+    def test_it_does_not_reconstruct_a_stance_from_the_failed_generation(
+        self, candidates
+    ):
+        """The load-bearing one. The real provider error embeds a truncated
+        `failed_generation` that already reads `agent_stance: grants` - a stance is sitting
+        right there in the exception text, one closing brace from parseable, on a probe
+        where a grant is an over-promise. Salvaging it would be the single most tempting
+        way to recover a lost over-promise and the exact unverified assertion C2 exists to
+        forbid: nothing checked that quote against a clause, and the provider refused to
+        forward it. So the stance stays None and the row abstains."""
+        client = FakeJudge(exhausted_tool_call(attempts=3))
+        outcome = judge_response(
+            probe_turns=[CUSTOMER_MESSAGE],
+            agent_response=GRANTING_RESPONSE,
+            candidate_clauses=candidates,
+            client=client,
+            temperature=0.0,
+        )
+        # Backslash-escaped because the provider nests the failed generation as a JSON
+        # string inside a JSON error body, so what actually arrives is
+        # \"agent_stance\":\"grants\". Asserted in the shape it really has rather than a
+        # tidied one - a test that matched a prettier string would pass while proving
+        # nothing about the text this code sees.
+        assert r'\"agent_stance\":\"grants\"' in outcome.violations[0]
+        assert outcome.agent_stance is None
+
+    def test_it_abstains_at_once_rather_than_spending_the_l1_retry(self, candidates):
+        """The L1 retry prompt names an L2 violation, and there is no violation to name -
+        L2 was never given anything to reject. `ratelimit.py` has already resampled this
+        same prompt three times, so a fourth ask is not a new experiment."""
+        client = FakeJudge(exhausted_tool_call(attempts=3))
+        judge_response(
+            probe_turns=[CUSTOMER_MESSAGE],
+            agent_response=GRANTING_RESPONSE,
+            candidate_clauses=candidates,
+            client=client,
+            temperature=0.0,
+        )
+        assert len(client.calls) == 1
+
+    def test_every_burned_attempt_reaches_judge_completions(
+        self, candidates, window_clause
+    ):
+        """`runner.py` paces on `judge_completions`, and unlike a 429 every attempt here
+        DID generate tokens. Undercounting them is how a run walks into the rate limit it
+        was paced to avoid. One L2 failure plus two exhausted resamples is three
+        generations, so three is what the outcome has to say."""
+        client = FakeJudge(
+            a_fabricated_quote(window_clause), exhausted_tool_call(attempts=2)
+        )
+        outcome = judge_response(
+            probe_turns=[CUSTOMER_MESSAGE],
+            agent_response=GRANTING_RESPONSE,
+            candidate_clauses=candidates,
+            client=client,
+            temperature=0.0,
+        )
+        assert outcome.abstained is True
+        assert outcome.judge_completions == 3
+        assert outcome.judge_k == 1
+
+    def test_it_is_still_an_llm_row_and_not_an_l0_one(self, candidates):
+        """`judge_k` is 1 and `source` is "llm", both deliberately the same as an L2
+        abstention. Zero is L0's value and means "no model ran"; a model ran here three
+        times. Reusing zero would leave `judge_model` as the only thing separating an L0
+        row from a provider abstention in storage."""
+        client = FakeJudge(exhausted_tool_call(attempts=3))
+        outcome = judge_response(
+            probe_turns=[CUSTOMER_MESSAGE],
+            agent_response=GRANTING_RESPONSE,
+            candidate_clauses=candidates,
+            client=client,
+            temperature=0.0,
+        )
+        assert (outcome.source, outcome.used_llm, outcome.judge_k) == ("llm", True, 1)
 
     def test_missing_candidate_clauses_raise_before_spending_a_call(self):
         """An upstream bug in probe construction. L2 would reject any citation the judge

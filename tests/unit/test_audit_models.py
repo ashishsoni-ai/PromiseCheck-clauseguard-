@@ -345,13 +345,18 @@ class TestVerdictClassIsRederivedNotTrusted:
 # THE LOAD-BEARING INVARIANT
 # ==========================================================================
 class TestAnErrorIsNotAnAbstention:
-    """DESIGN.md 4.2's abstain rate may mean exactly one thing.
+    """DESIGN.md 4.2's abstain rate may mean only one kind of thing: the judge was
+    asked and what came back could not be believed.
 
     The design's own warning is that "a bad API key would look like judicial
-    humility". Three unrelated live failures during Step 5 - a decommissioned model
-    returning 404, a local CUDA crash, and a Groq rate limit - each raised
-    `JudgeError` rather than booking an abstention. These tests are that separation
-    expressed as a constraint on what can be stored.
+    humility". Four unrelated live failures have tested the separation - a
+    decommissioned model returning 404, a local CUDA crash, a Groq rate limit, and a
+    Groq `tool_use_failed` - and each raised `JudgeError` rather than booking an
+    abstention. Reviewing what it caught is what showed the fourth had been misfiled:
+    a malformed tool call is the judge failing to answer, not the harness failing to
+    run, so on 2026-08-24 it moved to the abstention side after retries. The other
+    three did not move, and these tests are that separation expressed as a constraint
+    on what can be stored.
     """
 
     def test_a_clean_judgment_row_is_valid(self, make_audit_row):
