@@ -502,10 +502,31 @@ def render_small_print(
     ORACLE_UNAVAILABLE for why they are words rather than numbers.
     """
     rows = result.rows
-    with_span = sum(1 for row in rows if row.quoted_span)
+    # Each from the field it names, rather than the third by subtraction: L2's
+    # outcome lives in `span_verified` and whether there was anything to check
+    # lives in `quoted_span`, and those are two questions. The audit row
+    # permits a False beside a null span, so subtracting one from a total over
+    # the other would silently double-count such a row.
     verified = sum(1 for row in rows if row.span_verified is True)
     unverified = sum(1 for row in rows if row.span_verified is False)
+    quoted_nothing = sum(1 for row in rows if not row.quoted_span)
+
+    # Three buckets, each counted from what the row actually is, and a total
+    # obtained independently of them - so a set that stopped partitioning
+    # would show up as three numbers that no longer sum, rather than as one
+    # bucket quietly absorbing the difference. That was the bug: `used_llm`
+    # is False both for a row L0 settled and for a row whose judge call
+    # failed (that one carries `outcome=None`), so "the rest were settled by
+    # the L0 pre-filter" credited the pre-filter with the provider's
+    # failures. Measured on run 01a032fd - L0 settled 10 rows and the small
+    # print reported 12.
     llm_judged = sum(1 for judged in result.judged if judged.used_llm)
+    l0_settled = sum(
+        1
+        for judged in result.judged
+        if judged.outcome is not None and not judged.outcome.used_llm
+    )
+    never_judged = sum(1 for judged in result.judged if judged.outcome is None)
 
     print("\n  small print", file=stream)
     print(f"    probes attempted   : {reconciliation.attempted}", file=stream)
@@ -522,13 +543,17 @@ def render_small_print(
     print(f"    error rate         : {reconciliation.error_rate:.1%}", file=stream)
     print(
         f"    L2 spans           : {verified} verified, {unverified} not verified, "
-        f"{len(rows) - with_span} row(s) quoted nothing",
+        f"{quoted_nothing} quoted nothing (of {len(rows)} rows)",
         file=stream,
     )
     print(
         f"    judge              : {resolve_judge_model()} at temperature "
-        f"{resolve_judge_temp()}, {llm_judged}/{len(rows)} rows needed the LLM "
-        f"(the rest were settled by the L0 pre-filter)",
+        f"{resolve_judge_temp()}",
+        file=stream,
+    )
+    print(
+        f"    judge routing      : {llm_judged} LLM, {l0_settled} L0 pre-filter, "
+        f"{never_judged} never judged (of {len(result.judged)} rows)",
         file=stream,
     )
     print(f"    judge kappa        : {KAPPA_UNAVAILABLE}", file=stream)

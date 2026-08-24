@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from io import StringIO
 from types import SimpleNamespace
 
@@ -62,6 +63,7 @@ from harness.cli import (
 )
 from harness.execution.lockfiles import load_rules, write_probes, write_rules
 from harness.ingest import diff_against_manifest, ingest, update_manifest
+from harness.judge.judge import JudgeError
 from harness.schemas.judgment import Judgment
 from harness.schemas.probe import Probe, ProbeScenario, ProbeStrategy
 from harness.schemas.rule import Condition, EntitlementRule
@@ -138,6 +140,50 @@ def matrix_row(output: str, policy_stance: str) -> list[str]:
         if one.strip().startswith(policy_stance) and "policy \\ agent" not in one
     )
     return line.split()[:4]
+
+
+def small_print_counts(output: str, label: str, *buckets: str) -> dict[str, int]:
+    """The `N <bucket>` pairs on one small-print line, plus its stated total.
+
+    Parsed rather than substring-matched. `assert "0 L0 pre-filter" in output`
+    passes on a line reading "10 L0 pre-filter", which is precisely the kind of
+    off-by-a-population error these lines exist to make visible, so the
+    assertions here compare integers. The total is returned under `"of"` and is
+    read from the line rather than summed, so a test can check that the buckets
+    account for every row.
+    """
+    line = next(one for one in output.splitlines() if label in one)
+    alternatives = "|".join(re.escape(bucket) for bucket in buckets)
+    found = {
+        bucket: int(count)
+        for count, bucket in re.findall(rf"(\d+) ({alternatives})", line)
+    }
+    missing = [bucket for bucket in buckets if bucket not in found]
+    assert not missing, f"{label!r} line printed no count for {missing}: {line!r}"
+    stated_total = re.search(r"\(of (\d+) rows\)", line)
+    assert stated_total is not None, f"{label!r} line states no total: {line!r}"
+    found["of"] = int(stated_total.group(1))
+    return found
+
+
+def judge_routing(output: str) -> dict[str, int]:
+    """Where the run's rows went: to the model, to L0, or to neither."""
+    return small_print_counts(
+        output, "judge routing", "LLM", "L0 pre-filter", "never judged"
+    )
+
+
+def percent_on(output: str, label: str) -> float:
+    """The percentage on one small-print line, as a number.
+
+    Matched loosely on purpose: pinning the column alignment as well as the
+    value would make a cosmetic change to the label width fail a test about a
+    rate.
+    """
+    line = next(one for one in output.splitlines() if label in one)
+    found = re.search(r"(\d+(?:\.\d+)?)%", line)
+    assert found is not None, f"{label!r} line printed no percentage: {line!r}"
+    return float(found.group(1))
 
 
 @pytest.fixture
@@ -506,12 +552,140 @@ class TestTheSmallPrint:
     def test_it_reports_how_many_rows_needed_the_llm(self, over_promising_run):
         """The L0 saving is a headline claim, so the run has to show it per-run."""
         _, output = over_promising_run
-        assert "3/3 rows needed the LLM" in output
+        assert judge_routing(output) == {
+            "LLM": 3,
+            "L0 pre-filter": 0,
+            "never judged": 0,
+            "of": 3,
+        }
 
     def test_a_denying_run_needed_the_llm_for_nothing(self, run_cli):
         """`ExplodingJudge` already proves no call happened; this proves it is said."""
         _, output = run_cli(agent=FakeAgent(reply=DENYING_REPLY))
-        assert "0/3 rows needed the LLM" in output
+        assert judge_routing(output) == {
+            "LLM": 0,
+            "L0 pre-filter": 3,
+            "never judged": 0,
+            "of": 3,
+        }
+
+    def test_the_l2_line_counts_each_bucket_from_its_own_field(
+        self, over_promising_run
+    ):
+        """C2's per-run evidence is this line, so its three counts are asserted.
+
+        On the live 30-probe run it read 17 verified, 0 not verified, 13 quoted
+        nothing. Here it is three of three, because all three probes escalated
+        and the queued judgment quotes a span L2 can find.
+        """
+        _, output = over_promising_run
+        assert small_print_counts(
+            output, "L2 spans", "verified", "not verified", "quoted nothing"
+        ) == {"verified": 3, "not verified": 0, "quoted nothing": 0, "of": 3}
+
+    def test_an_l0_run_quotes_nothing_rather_than_failing_a_check(self, run_cli):
+        """No model ran, so there was no span to check - not a span that failed.
+
+        Paired with the test above so that neither count is one a broken
+        renderer could satisfy by standing still: the same three rows move from
+        3/0/0 to 0/0/3 when the pre-filter settles them instead.
+
+        `not verified` is 0 in both, and task #65 is why that is not evidence of
+        anything: no row this codebase writes can carry `span_verified=False`,
+        because a rejected span becomes an abstention and `build_row` drops the
+        field on that branch. Asserted here as the current behaviour, not as a
+        measurement.
+        """
+        _, output = run_cli(agent=FakeAgent(reply=DENYING_REPLY))
+        assert small_print_counts(
+            output, "L2 spans", "verified", "not verified", "quoted nothing"
+        ) == {"verified": 0, "not verified": 0, "quoted nothing": 3, "of": 3}
+
+
+class TestARefusedRowIsNotCreditedToThePreFilter:
+    """The three routing buckets partition the run; none of them is a remainder.
+
+    `Judged.used_llm` is False for two entirely different rows: one the L0
+    pre-filter settled without a model, and one whose judge call failed - that
+    second one carries `outcome=None`. So a line that printed the LLM count and
+    called everything else "settled by the L0 pre-filter" reported the
+    provider's failures as savings. Measured on run 01a032fd, where L0 settled
+    10 rows and the small print said 12; the two populations were separable in
+    the database the whole time, by `judge_model`.
+
+    This is the reporting half of the fix that made a malformed tool call
+    abstain instead of vanishing. That change raised the number of rows the LLM
+    was charged with and left this line saying the opposite.
+    """
+
+    @pytest.fixture
+    def one_row_per_bucket(self, slice_on_disk, run_cli):
+        """A run that lands one row in each of the three buckets.
+
+        The two probes the policy denies get a granting reply and so escalate to
+        L1; the one it allows gets a denying reply and terminates at L0.
+        `judge_exchanges` walks exchanges in probe order, so the judge queue is
+        consumed in that order: the first escalation is judged, the second is
+        refused. Which of the two it is does not matter to the counts, but
+        fixing it keeps the over-promise total in this fixture stable.
+        """
+        escalating = {
+            probe.turns[0]: GRANTING_REPLY for probe in slice_on_disk.probes[:2]
+        }
+        return run_cli(
+            agent=FakeAgent(reply=DENYING_REPLY, replies=escalating),
+            judge=FakeJudge(
+                a_grant_quoting(slice_on_disk.window.clause_id),
+                JudgeError("502 from the provider"),
+            ),
+        )
+
+    def test_the_fixture_really_does_produce_a_failed_row(self, one_row_per_bucket):
+        """Without this the test below could pass by there being nothing to miscount.
+
+        A guard whose subject has quietly disappeared reads exactly like a guard
+        that is working.
+        """
+        _, output = one_row_per_bucket
+        assert "scorable / abstained / errored: 2 / 0 / 1" in output
+
+    def test_the_failed_row_is_not_counted_as_an_l0_saving(self, one_row_per_bucket):
+        _, output = one_row_per_bucket
+        assert judge_routing(output) == {
+            "LLM": 1,
+            "L0 pre-filter": 1,
+            "never judged": 1,
+            "of": 3,
+        }
+
+    def test_the_buckets_account_for_every_row(self, one_row_per_bucket):
+        """The total is read off the line, not summed from the buckets.
+
+        So if the three ever stop partitioning the run, the line shows three
+        numbers that do not add up instead of one bucket absorbing the
+        difference - which is the failure mode this whole class is about.
+        """
+        _, output = one_row_per_bucket
+        counts = judge_routing(output)
+        assert (
+            counts["LLM"] + counts["L0 pre-filter"] + counts["never judged"]
+            == counts["of"]
+        )
+
+    def test_a_failed_row_is_reported_as_errored_and_not_as_an_abstention(
+        self, one_row_per_bucket
+    ):
+        """`never judged` is the errored population, so the rates have to agree.
+
+        An abstention is the judge declining to commit and has an outcome; an
+        error is the call not happening at all. DESIGN.md 4.2 keeps errors out
+        of the abstain-rate denominator, so a run whose one failure was read as
+        an abstention would move a headline number - which is the same
+        confusion in the other direction.
+        """
+        _, output = one_row_per_bucket
+        assert percent_on(output, "abstain rate") == 0.0
+        assert percent_on(output, "error rate") == 33.3
 
 
 class TestTheRegressionStrip:
