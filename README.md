@@ -42,15 +42,26 @@ next begins.
 | 3 | `evaluate_rules()` correctness core | done |
 | 4 | `aut-naive`, frozen by SHA | done, frozen at `aut-naive-v1` |
 | 5 | Judge L0 prefilter + L1 classify + L2 span verify | done |
-| 6 | Append-only audit store | not started |
-| 7 | Vertical slice: `clauseguard run` | not started |
+| 6 | Append-only audit store | done |
+| 7 | Vertical slice: `clauseguard run` | offline-closed; one live run outstanding |
 
-As of 2026-08-23 the suite is 856 offline tests, plus 2 `live` tests exercising the
-real judge. L3 self-consistency (the k=3 majority on the consequential class,
-DESIGN.md §2 step 8) is a stub: scoped out of Step 5 deliberately, not missed. The
-live measurements since then have made it load-bearing rather than polish — but they
-also showed it only addresses half the problem, which the third limitations entry
-explains.
+As of 2026-08-24 the suite is 1129 offline tests, plus 2 `live` tests exercising the
+real judge. Step 7's offline proof is complete — the whole slice runs end to end
+against a stubbed agent and a stubbed judge — and what remains is a single live
+30-probe run against the frozen `aut-naive` container, which is the only evidence
+that has to be produced on real hardware against a real provider.
+
+Two things about that run are stated up front rather than discovered by a reader.
+It takes roughly **eight minutes**, not the 45 seconds DESIGN.md §2 step 11 targets,
+because Groq's free tier caps this model at 8000 tokens per minute and a judge call
+requests 1152–2178 of them; the run is paced at 16.5s between judge calls to stay
+under that ceiling, and `harness/judge/ratelimit.py` honours the provider's stated
+wait if a 429 lands anyway. That figure is published as measured rather than
+restated as a target. And L3 self-consistency (the k=3 majority on the consequential
+class, DESIGN.md §2 step 8) is a stub: scoped out of Step 5 deliberately, not
+missed. The live measurements since then have made it load-bearing rather than
+polish — but they also showed it only addresses half the problem, which the third
+limitations entry explains.
 
 Everything after Step 7 — rule extraction, probe-generation automation,
 `aut-strong`, the CI gate, the dashboard — is deliberately not started yet.
