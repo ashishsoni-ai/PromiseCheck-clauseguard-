@@ -1,1 +1,215 @@
-{}
+{
+  "documents": {
+    "acme-refunds": {
+      "clauses": [
+        {
+          "clause_id": "acme-refunds:001:1a2b2450",
+          "content_hash": "1a2b2450",
+          "heading_path": [
+            "Acme Retail — Returns, Refunds & Cancellations",
+            "1. Scope"
+          ],
+          "ordinal": 1,
+          "token_estimate": 110
+        },
+        {
+          "clause_id": "acme-refunds:002:51f80aee",
+          "content_hash": "51f80aee",
+          "heading_path": [
+            "Acme Retail — Returns, Refunds & Cancellations",
+            "2. Definitions"
+          ],
+          "ordinal": 2,
+          "token_estimate": 71
+        },
+        {
+          "clause_id": "acme-refunds:003:d6343918",
+          "content_hash": "d6343918",
+          "heading_path": [
+            "Acme Retail — Returns, Refunds & Cancellations",
+            "2. Definitions"
+          ],
+          "ordinal": 3,
+          "token_estimate": 83
+        },
+        {
+          "clause_id": "acme-refunds:004:7c895dd5",
+          "content_hash": "7c895dd5",
+          "heading_path": [
+            "Acme Retail — Returns, Refunds & Cancellations",
+            "3. Eligibility"
+          ],
+          "ordinal": 4,
+          "token_estimate": 60
+        },
+        {
+          "clause_id": "acme-refunds:005:a4106273",
+          "content_hash": "a4106273",
+          "heading_path": [
+            "Acme Retail — Returns, Refunds & Cancellations",
+            "3. Eligibility"
+          ],
+          "ordinal": 5,
+          "token_estimate": 48
+        },
+        {
+          "clause_id": "acme-refunds:006:0dbae093",
+          "content_hash": "0dbae093",
+          "heading_path": [
+            "Acme Retail — Returns, Refunds & Cancellations",
+            "4. Return window"
+          ],
+          "ordinal": 6,
+          "token_estimate": 48
+        },
+        {
+          "clause_id": "acme-refunds:007:b15ef9db",
+          "content_hash": "b15ef9db",
+          "heading_path": [
+            "Acme Retail — Returns, Refunds & Cancellations",
+            "4. Return window"
+          ],
+          "ordinal": 7,
+          "token_estimate": 57
+        },
+        {
+          "clause_id": "acme-refunds:008:60fcdeda",
+          "content_hash": "60fcdeda",
+          "heading_path": [
+            "Acme Retail — Returns, Refunds & Cancellations",
+            "5. Categories excluded from return"
+          ],
+          "ordinal": 8,
+          "token_estimate": 20
+        },
+        {
+          "clause_id": "acme-refunds:009:585373e3",
+          "content_hash": "585373e3",
+          "heading_path": [
+            "Acme Retail — Returns, Refunds & Cancellations",
+            "5. Categories excluded from return"
+          ],
+          "ordinal": 9,
+          "token_estimate": 17
+        },
+        {
+          "clause_id": "acme-refunds:010:15150c45",
+          "content_hash": "15150c45",
+          "heading_path": [
+            "Acme Retail — Returns, Refunds & Cancellations",
+            "5. Categories excluded from return"
+          ],
+          "ordinal": 10,
+          "token_estimate": 16
+        },
+        {
+          "clause_id": "acme-refunds:011:f4c4ad80",
+          "content_hash": "f4c4ad80",
+          "heading_path": [
+            "Acme Retail — Returns, Refunds & Cancellations",
+            "5. Categories excluded from return"
+          ],
+          "ordinal": 11,
+          "token_estimate": 16
+        },
+        {
+          "clause_id": "acme-refunds:012:af2d99b7",
+          "content_hash": "af2d99b7",
+          "heading_path": [
+            "Acme Retail — Returns, Refunds & Cancellations",
+            "5. Categories excluded from return"
+          ],
+          "ordinal": 12,
+          "token_estimate": 52
+        },
+        {
+          "clause_id": "acme-refunds:013:562deca4",
+          "content_hash": "562deca4",
+          "heading_path": [
+            "Acme Retail — Returns, Refunds & Cancellations",
+            "5. Categories excluded from return"
+          ],
+          "ordinal": 13,
+          "token_estimate": 71
+        },
+        {
+          "clause_id": "acme-refunds:014:d2649e12",
+          "content_hash": "d2649e12",
+          "heading_path": [
+            "Acme Retail — Returns, Refunds & Cancellations",
+            "6. Condition of returned items"
+          ],
+          "ordinal": 14,
+          "token_estimate": 64
+        },
+        {
+          "clause_id": "acme-refunds:015:8e0d8118",
+          "content_hash": "8e0d8118",
+          "heading_path": [
+            "Acme Retail — Returns, Refunds & Cancellations",
+            "6. Condition of returned items"
+          ],
+          "ordinal": 15,
+          "token_estimate": 73
+        },
+        {
+          "clause_id": "acme-refunds:016:57e0ad6e",
+          "content_hash": "57e0ad6e",
+          "heading_path": [
+            "Acme Retail — Returns, Refunds & Cancellations",
+            "7. Refunds"
+          ],
+          "ordinal": 16,
+          "token_estimate": 67
+        },
+        {
+          "clause_id": "acme-refunds:017:c40e334e",
+          "content_hash": "c40e334e",
+          "heading_path": [
+            "Acme Retail — Returns, Refunds & Cancellations",
+            "7. Refunds"
+          ],
+          "ordinal": 17,
+          "token_estimate": 52
+        },
+        {
+          "clause_id": "acme-refunds:018:a2d820b0",
+          "content_hash": "a2d820b0",
+          "heading_path": [
+            "Acme Retail — Returns, Refunds & Cancellations",
+            "8. Cancellations"
+          ],
+          "ordinal": 18,
+          "token_estimate": 48
+        },
+        {
+          "clause_id": "acme-refunds:019:1d2921e7",
+          "content_hash": "1d2921e7",
+          "heading_path": [
+            "Acme Retail — Returns, Refunds & Cancellations",
+            "9. Exchanges"
+          ],
+          "ordinal": 19,
+          "token_estimate": 52
+        },
+        {
+          "clause_id": "acme-refunds:020:27ca59b5",
+          "content_hash": "27ca59b5",
+          "heading_path": [
+            "Acme Retail — Returns, Refunds & Cancellations",
+            "10. Escalation"
+          ],
+          "ordinal": 20,
+          "token_estimate": 54
+        }
+      ],
+      "content_fetched_at": "2026-08-24T04:17:32.161460+00:00",
+      "corpus_role": "worked_example",
+      "doc_slug": "acme-refunds",
+      "is_holdout": false,
+      "policy_version": "sha256:18b2e586a0aab8f631d1c7d0e8201115392170a26750e58da475a464169f7fc4",
+      "source": "policies/acme-refunds.md"
+    }
+  },
+  "schema_version": 1
+}

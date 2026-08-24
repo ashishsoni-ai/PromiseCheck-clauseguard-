@@ -369,6 +369,14 @@ def make_audit_row():
         if no_judgment:
             for field in JUDGMENT_FIELDS:
                 defaults.pop(field, None)
+        if overrides.get("judge_k") == 0:
+            # k=0 means no completion came back, so the default confidence is not
+            # a value such a row could carry (see
+            # `AuditRow._zero_samples_means_no_model_ran`). Dropped for the same
+            # reason the judgment fields are dropped above: a default that makes
+            # the row illegal would force every L0 test to pass judge_confidence
+            # =None by hand, which reads as if the None were the point.
+            defaults.pop("judge_confidence", None)
         defaults.update(overrides)
         return AuditRow(**defaults)
 

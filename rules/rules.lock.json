@@ -1,1 +1,489 @@
-{}
+{
+  "schema": "clauseguard/rules.lock/1",
+  "policy_doc": "acme-refunds",
+  "policy_version": "sha256:18b2e586a0aab8f631d1c7d0e8201115392170a26750e58da475a464169f7fc4",
+  "authored_by": "hand-authored by scripts/author_rules.py (DESIGN.md 9); no extractor ran",
+  "rules": [
+    {
+      "rule_id": "refund-window-30d",
+      "clause_ids": [
+        "acme-refunds:006:0dbae093"
+      ],
+      "entitlement": "refund",
+      "polarity": "grants",
+      "conditions": [
+        {
+          "attribute": "days_since_delivery",
+          "op": "<=",
+          "value": 30,
+          "source_span": "Returns must be initiated within 30 days of delivery."
+        }
+      ],
+      "exceptions": [
+        {
+          "rule_id": "refund-hygiene-category-excluded",
+          "clause_ids": [
+            "acme-refunds:003:d6343918",
+            "acme-refunds:008:60fcdeda",
+            "acme-refunds:009:585373e3",
+            "acme-refunds:010:15150c45",
+            "acme-refunds:011:f4c4ad80"
+          ],
+          "entitlement": "refund",
+          "polarity": "denies",
+          "conditions": [
+            {
+              "attribute": "item_category",
+              "op": "in",
+              "value": [
+                "innerwear",
+                "sleepwear",
+                "thermal base layers",
+                "shapewear",
+                "swimwear",
+                "swim accessories",
+                "goggles",
+                "swim caps",
+                "cosmetics",
+                "skincare",
+                "fragrance"
+              ],
+              "source_span": "The following categories cannot be returned once the hygiene seal has been broken:"
+            },
+            {
+              "attribute": "hygiene_seal_state",
+              "op": "not_in",
+              "value": [
+                "none"
+              ],
+              "source_span": "Where an item carries no hygiene seal, the category exclusions in section 5 do not apply to it."
+            }
+          ],
+          "exceptions": [
+            {
+              "rule_id": "refund-hygiene-seal-intact-carve-out",
+              "clause_ids": [
+                "acme-refunds:012:af2d99b7"
+              ],
+              "entitlement": "refund",
+              "polarity": "grants",
+              "conditions": [
+                {
+                  "attribute": "hygiene_seal_state",
+                  "op": "==",
+                  "value": "intact",
+                  "source_span": "its hygiene seal is intact"
+                },
+                {
+                  "attribute": "item_opened",
+                  "op": "==",
+                  "value": "no",
+                  "source_span": "it is unopened"
+                }
+              ],
+              "exceptions": [
+                {
+                  "rule_id": "refund-hygiene-seal-tampered",
+                  "clause_ids": [
+                    "acme-refunds:012:af2d99b7"
+                  ],
+                  "entitlement": "refund",
+                  "polarity": "denies",
+                  "conditions": [
+                    {
+                      "attribute": "seal_tampering_observed",
+                      "op": "==",
+                      "value": "yes",
+                      "source_span": "reject the return if the seal shows any sign of tampering"
+                    }
+                  ],
+                  "exceptions": [],
+                  "precedence": 40,
+                  "extraction_confidence": 1.0,
+                  "needs_human_review": false
+                }
+              ],
+              "precedence": 30,
+              "extraction_confidence": 1.0,
+              "needs_human_review": false
+            }
+          ],
+          "precedence": 20,
+          "extraction_confidence": 1.0,
+          "needs_human_review": false
+        }
+      ],
+      "precedence": 10,
+      "extraction_confidence": 1.0,
+      "needs_human_review": false
+    },
+    {
+      "rule_id": "refund-clearance-window-7d",
+      "clause_ids": [
+        "acme-refunds:003:d6343918",
+        "acme-refunds:007:b15ef9db"
+      ],
+      "entitlement": "refund",
+      "polarity": "denies",
+      "conditions": [
+        {
+          "attribute": "is_clearance_item",
+          "op": "==",
+          "value": "yes",
+          "source_span": "means any item listed under Clearance at the time of purchase"
+        },
+        {
+          "attribute": "days_since_delivery",
+          "op": ">",
+          "value": 7,
+          "source_span": "Clearance items must be returned within 7 days of delivery."
+        }
+      ],
+      "exceptions": [],
+      "precedence": 60,
+      "extraction_confidence": 1.0,
+      "needs_human_review": false
+    },
+    {
+      "rule_id": "refund-not-original-condition",
+      "clause_ids": [
+        "acme-refunds:002:51f80aee",
+        "acme-refunds:014:d2649e12"
+      ],
+      "entitlement": "refund",
+      "polarity": "denies",
+      "conditions": [
+        {
+          "attribute": "item_in_original_condition",
+          "op": "==",
+          "value": "no",
+          "source_span": "A return is accepted only if the item is in original condition"
+        }
+      ],
+      "exceptions": [],
+      "precedence": 50,
+      "extraction_confidence": 1.0,
+      "needs_human_review": false
+    },
+    {
+      "rule_id": "refund-unreported-damage",
+      "clause_ids": [
+        "acme-refunds:015:8e0d8118"
+      ],
+      "entitlement": "refund",
+      "polarity": "denies",
+      "conditions": [
+        {
+          "attribute": "has_visible_damage",
+          "op": "==",
+          "value": "yes",
+          "source_span": "Items returned with visible damage"
+        },
+        {
+          "attribute": "damage_reported_within_48h",
+          "op": "==",
+          "value": "no",
+          "source_span": "that was not reported within 48 hours of delivery are rejected at inspection"
+        }
+      ],
+      "exceptions": [],
+      "precedence": 50,
+      "extraction_confidence": 1.0,
+      "needs_human_review": false
+    },
+    {
+      "rule_id": "refund-no-proof-of-purchase",
+      "clause_ids": [
+        "acme-refunds:004:7c895dd5"
+      ],
+      "entitlement": "refund",
+      "polarity": "denies",
+      "conditions": [
+        {
+          "attribute": "proof_of_purchase_provided",
+          "op": "==",
+          "value": "no",
+          "source_span": "Proof of purchase is required for every return"
+        }
+      ],
+      "exceptions": [],
+      "precedence": 50,
+      "extraction_confidence": 1.0,
+      "needs_human_review": false
+    },
+    {
+      "rule_id": "refund-pickup-address-differs",
+      "clause_ids": [
+        "acme-refunds:005:a4106273"
+      ],
+      "entitlement": "refund",
+      "polarity": "denies",
+      "conditions": [
+        {
+          "attribute": "pickup_address_matches_order",
+          "op": "==",
+          "value": "no",
+          "source_span": "Returns are collected only from the delivery address on the original order."
+        }
+      ],
+      "exceptions": [],
+      "precedence": 50,
+      "extraction_confidence": 1.0,
+      "needs_human_review": false
+    },
+    {
+      "rule_id": "refund-wearable-registered",
+      "clause_ids": [
+        "acme-refunds:013:562deca4"
+      ],
+      "entitlement": "refund",
+      "polarity": "denies",
+      "conditions": [
+        {
+          "attribute": "item_category",
+          "op": "in",
+          "value": [
+            "wearable electronics",
+            "smartwatches",
+            "fitness bands"
+          ],
+          "source_span": "Wearable electronics, including smartwatches and fitness bands"
+        },
+        {
+          "attribute": "device_registered_to_account",
+          "op": "==",
+          "value": "yes",
+          "source_span": "may be returned only if the device has not been registered to an account"
+        }
+      ],
+      "exceptions": [],
+      "precedence": 20,
+      "extraction_confidence": 1.0,
+      "needs_human_review": false
+    },
+    {
+      "rule_id": "refund-wearable-accessories-missing",
+      "clause_ids": [
+        "acme-refunds:013:562deca4"
+      ],
+      "entitlement": "refund",
+      "polarity": "denies",
+      "conditions": [
+        {
+          "attribute": "item_category",
+          "op": "in",
+          "value": [
+            "wearable electronics",
+            "smartwatches",
+            "fitness bands"
+          ],
+          "source_span": "Wearable electronics, including smartwatches and fitness bands"
+        },
+        {
+          "attribute": "charging_accessories_present",
+          "op": "==",
+          "value": "no",
+          "source_span": "all charging accessories are present"
+        }
+      ],
+      "exceptions": [],
+      "precedence": 20,
+      "extraction_confidence": 1.0,
+      "needs_human_review": false
+    },
+    {
+      "rule_id": "refund-out-of-scope-marketplace",
+      "clause_ids": [
+        "acme-refunds:001:1a2b2450"
+      ],
+      "entitlement": "refund",
+      "polarity": "denies",
+      "conditions": [
+        {
+          "attribute": "order_channel",
+          "op": "in",
+          "value": [
+            "marketplace partner",
+            "third-party storefront"
+          ],
+          "source_span": "Orders placed through a marketplace partner or a third-party storefront"
+        }
+      ],
+      "exceptions": [],
+      "precedence": 100,
+      "extraction_confidence": 1.0,
+      "needs_human_review": false
+    },
+    {
+      "rule_id": "refund-out-of-scope-bulk",
+      "clause_ids": [
+        "acme-refunds:001:1a2b2450"
+      ],
+      "entitlement": "refund",
+      "polarity": "denies",
+      "conditions": [
+        {
+          "attribute": "units_of_single_item",
+          "op": ">",
+          "value": 20,
+          "source_span": "bulk orders of more than 20 units of a single item are handled under a separate written agreement and fall outside this policy entirely"
+        }
+      ],
+      "exceptions": [],
+      "precedence": 100,
+      "extraction_confidence": 1.0,
+      "needs_human_review": false
+    },
+    {
+      "rule_id": "cancellation-before-dispatch",
+      "clause_ids": [
+        "acme-refunds:018:a2d820b0"
+      ],
+      "entitlement": "cancellation",
+      "polarity": "grants",
+      "conditions": [
+        {
+          "attribute": "order_dispatched",
+          "op": "==",
+          "value": "no",
+          "source_span": "An order may be cancelled at no charge at any time before it is dispatched."
+        }
+      ],
+      "exceptions": [],
+      "precedence": 10,
+      "extraction_confidence": 1.0,
+      "needs_human_review": false
+    },
+    {
+      "rule_id": "cancellation-after-dispatch",
+      "clause_ids": [
+        "acme-refunds:018:a2d820b0"
+      ],
+      "entitlement": "cancellation",
+      "polarity": "denies",
+      "conditions": [
+        {
+          "attribute": "order_dispatched",
+          "op": "==",
+          "value": "yes",
+          "source_span": "Once an order has been dispatched it cannot be cancelled"
+        }
+      ],
+      "exceptions": [],
+      "precedence": 20,
+      "extraction_confidence": 1.0,
+      "needs_human_review": false
+    },
+    {
+      "rule_id": "cancellation-out-of-scope-marketplace",
+      "clause_ids": [
+        "acme-refunds:001:1a2b2450"
+      ],
+      "entitlement": "cancellation",
+      "polarity": "denies",
+      "conditions": [
+        {
+          "attribute": "order_channel",
+          "op": "in",
+          "value": [
+            "marketplace partner",
+            "third-party storefront"
+          ],
+          "source_span": "Orders placed through a marketplace partner or a third-party storefront"
+        }
+      ],
+      "exceptions": [],
+      "precedence": 100,
+      "extraction_confidence": 1.0,
+      "needs_human_review": false
+    },
+    {
+      "rule_id": "partial-refund-opened-electronics-restocking-fee",
+      "clause_ids": [
+        "acme-refunds:006:0dbae093",
+        "acme-refunds:015:8e0d8118"
+      ],
+      "entitlement": "partial_refund",
+      "polarity": "grants",
+      "conditions": [
+        {
+          "attribute": "item_category",
+          "op": "in",
+          "value": [
+            "electronics"
+          ],
+          "source_span": "Opened electronics that are otherwise eligible"
+        },
+        {
+          "attribute": "item_opened",
+          "op": "==",
+          "value": "yes",
+          "source_span": "Opened electronics that are otherwise eligible are subject to a restocking fee of 15% of the item price"
+        },
+        {
+          "attribute": "days_since_delivery",
+          "op": "<=",
+          "value": 30,
+          "source_span": "Returns must be initiated within 30 days of delivery."
+        }
+      ],
+      "exceptions": [],
+      "precedence": 10,
+      "extraction_confidence": 1.0,
+      "needs_human_review": false
+    },
+    {
+      "rule_id": "replacement-size-exchange",
+      "clause_ids": [
+        "acme-refunds:006:0dbae093",
+        "acme-refunds:019:1d2921e7"
+      ],
+      "entitlement": "replacement",
+      "polarity": "grants",
+      "conditions": [
+        {
+          "attribute": "exchange_requests_used_this_order",
+          "op": "<",
+          "value": 1,
+          "source_span": "may be requested once per order"
+        },
+        {
+          "attribute": "replacement_stock_available",
+          "op": "==",
+          "value": "yes",
+          "source_span": "is subject to stock availability"
+        },
+        {
+          "attribute": "days_since_delivery",
+          "op": "<=",
+          "value": 30,
+          "source_span": "Returns must be initiated within 30 days of delivery."
+        }
+      ],
+      "exceptions": [],
+      "precedence": 10,
+      "extraction_confidence": 1.0,
+      "needs_human_review": false
+    },
+    {
+      "rule_id": "replacement-clearance-excluded",
+      "clause_ids": [
+        "acme-refunds:019:1d2921e7"
+      ],
+      "entitlement": "replacement",
+      "polarity": "denies",
+      "conditions": [
+        {
+          "attribute": "is_clearance_item",
+          "op": "==",
+          "value": "yes",
+          "source_span": "Exchanges are not available for clearance items."
+        }
+      ],
+      "exceptions": [],
+      "precedence": 20,
+      "extraction_confidence": 1.0,
+      "needs_human_review": false
+    }
+  ]
+}

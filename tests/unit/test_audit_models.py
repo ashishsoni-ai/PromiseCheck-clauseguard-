@@ -493,9 +493,92 @@ class TestAgreementBelongsToAVote:
         before the agreement plumbing exists."""
         assert make_audit_row(judge_k=3).judge_agreement is None
 
-    def test_k_must_be_at_least_one(self, make_audit_row):
+    def test_agreement_at_k_of_0_is_refused(self, make_audit_row):
+        """No votes at all has even less agreement than one vote."""
+        with pytest.raises(ValidationError, match="no votes has no agreement"):
+            make_audit_row(judge_k=0, judge_agreement=1.0)
+
+    def test_k_must_not_be_negative(self, make_audit_row):
         with pytest.raises(ValidationError):
-            make_audit_row(judge_k=0)
+            make_audit_row(judge_k=-1)
+
+
+class TestZeroSamplesMeansNoModelRan:
+    """`judge_k=0` is how an L0 termination and a failed call are recorded.
+
+    DESIGN.md 5.1 is silent on this - its only example is `judge_k: 3` - so the
+    field was relaxed from `ge=1` to `ge=0` deliberately. These tests pin what the
+    relaxation is allowed to mean, because the alternative was leaving the default
+    at 1 and having every L0 row claim a sample it never took.
+    """
+
+    def test_an_l0_row_is_writable_at_all(self, make_audit_row):
+        row = make_audit_row(
+            judge_k=0,
+            judge_model="deterministic-prefilter-L0",
+            agent_stance="denies",
+            verdict_class=VerdictClass.CORRECT_DENIAL,
+            cited_clause_id=None,
+            quoted_span=None,
+            response_span=None,
+            span_verified=None,
+            entitlement_asserted=None,
+        )
+        assert row.judge_k == 0
+        assert row.is_scorable
+        assert row.judge_confidence is None
+
+    def test_confidence_at_k_of_0_is_refused(self, make_audit_row):
+        """A lexicon has no calibrated confidence, and 4.2 reports this field."""
+        with pytest.raises(ValidationError, match="judge_confidence is set"):
+            make_audit_row(judge_k=0, judge_confidence=0.91)
+
+    def test_completions_at_k_of_0_is_refused(self, make_audit_row):
+        """'0 samples, 1 completion' reads as a completion that was thrown away,
+        which is what an abstention is - and abstentions are k=1."""
+        with pytest.raises(ValidationError, match="judge_completions is set"):
+            make_audit_row(judge_k=0, judge_completions=1)
+
+    def test_temperature_at_k_of_0_is_refused_without_an_error(self, make_audit_row):
+        """An L0 row made no call, so a temperature on it is the default
+        masquerading as provenance."""
+        with pytest.raises(ValidationError, match="judge_temperature is set"):
+            make_audit_row(judge_k=0, judge_temperature=0.0)
+
+    def test_temperature_at_k_of_0_is_allowed_with_an_error(self, make_audit_row):
+        """A failed call was still made, and at a temperature. Recording it is a
+        fact about the request rather than a claim about a reply."""
+        row = make_audit_row(
+            judge_k=0,
+            judge_error="JudgeError: RateLimitError from groq",
+            judge_temperature=0.0,
+        )
+        assert row.judge_temperature == 0.0
+        assert not row.is_scorable
+
+    def test_the_two_zero_sample_shapes_are_distinguished_by_judge_error(
+        self, make_audit_row
+    ):
+        """The invariant leans on L0 never erroring, so that is asserted here
+        rather than left as a comment three files away."""
+        l0 = make_audit_row(
+            judge_k=0,
+            judge_model="deterministic-prefilter-L0",
+            agent_stance="denies",
+            verdict_class=VerdictClass.CORRECT_DENIAL,
+            entitlement_asserted=None,
+            cited_clause_id=None,
+            quoted_span=None,
+            response_span=None,
+            span_verified=None,
+        )
+        errored = make_audit_row(judge_k=0, judge_error="JudgeError: boom")
+        assert l0.judge_error is None
+        assert errored.judge_error is not None
+        assert l0.judge_k == errored.judge_k == 0
+        # Only the L0 row counts toward a headline metric: it produced a verdict.
+        assert l0.is_scorable
+        assert not errored.is_scorable
 
 
 # ==========================================================================

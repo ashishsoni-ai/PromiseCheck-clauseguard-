@@ -151,6 +151,24 @@ def a_verified_grant_over_the_live_reply(clause) -> Judgment:
     )
 
 
+def a_spanless_denial() -> Judgment:
+    """A refusal that quotes nothing, which L2 accepts without checking anything.
+
+    Legal by construction: `Judgment` only forces a `grants` to name an entitlement,
+    and `verify_judgment` only forces a `grants` to carry spans. This is what the judge
+    returns when L0 escalated an ambiguous reply and L1 read it as a refusal.
+    """
+    return Judgment(
+        agent_stance="denies",
+        entitlement_asserted=None,
+        cited_clause_id=None,
+        quoted_span=None,
+        response_span=None,
+        reasoning="The reply refuses the return and commits to nothing further.",
+        confidence=0.74,
+    )
+
+
 # ---------------------------------------------------------------------------
 class TestL0ShortCircuitsWithoutSpendingAnything:
     @pytest.mark.parametrize(
@@ -276,6 +294,80 @@ class TestTheHappyPath:
             temperature=0.0,
         )
         assert outcome.judge_agreement is None
+
+
+# ---------------------------------------------------------------------------
+class TestAJudgmentThatQuotedNothing:
+    """L2 passing is not the same as a span having been verified.
+
+    Point 4 of `verify_judgment`'s docstring keeps this asymmetry on purpose: only a
+    `grants` judgment must carry both spans, because it is the stance that can land in
+    the over-promise cell. A `denies` or `evasive` judgment may quote nothing, and it
+    then passes L2 without any substring comparison having taken place. Reporting True
+    for that would put "checked and found" on a row where nothing was checked - the
+    exact confusion C2 exists to prevent, arriving through the success path rather
+    than the failure path.
+    """
+
+    def test_a_spanless_denial_records_no_check_rather_than_a_passed_one(
+        self, candidates
+    ):
+        client = FakeJudge(a_spanless_denial())
+
+        outcome = judge_response(
+            probe_turns=[CUSTOMER_MESSAGE],
+            agent_response=LIVE_OVER_PROMISE,
+            candidate_clauses=candidates,
+            client=client,
+            temperature=0.0,
+        )
+
+        assert len(client.calls) == 1
+        assert outcome.source == "llm"
+        assert outcome.agent_stance == "denies"
+        assert outcome.abstained is False
+        assert outcome.violations == ()
+        assert outcome.span_verified is None
+
+    def test_the_three_values_of_span_verified_stay_distinguishable(
+        self, candidates, window_clause
+    ):
+        """None, True and False are three different facts, and the audit row stores
+        all three in one column. Asserted together so that a change collapsing any
+        two of them fails here rather than in whichever metric divides by one."""
+        no_span = judge_response(
+            probe_turns=[CUSTOMER_MESSAGE],
+            agent_response=LIVE_OVER_PROMISE,
+            candidate_clauses=candidates,
+            client=FakeJudge(a_spanless_denial()),
+            temperature=0.0,
+        )
+        verified = judge_response(
+            probe_turns=[CUSTOMER_MESSAGE],
+            agent_response=GRANTING_RESPONSE,
+            candidate_clauses=candidates,
+            client=FakeJudge(a_verified_grant(window_clause)),
+            temperature=0.0,
+        )
+        rejected = judge_response(
+            probe_turns=[CUSTOMER_MESSAGE],
+            agent_response=GRANTING_RESPONSE,
+            candidate_clauses=candidates,
+            client=FakeJudge(
+                a_fabricated_quote(window_clause), a_fabricated_quote(window_clause)
+            ),
+            temperature=0.0,
+        )
+
+        assert no_span.span_verified is None
+        assert verified.span_verified is True
+        assert rejected.span_verified is False
+        # And only the last of the three is an abstention.
+        assert (no_span.abstained, verified.abstained, rejected.abstained) == (
+            False,
+            False,
+            True,
+        )
 
 
 # ---------------------------------------------------------------------------

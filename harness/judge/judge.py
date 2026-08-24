@@ -356,7 +356,8 @@ class JudgeOutcome:
     than merely empty:
 
     * `agent_stance` is None only for an abstention - there is no verdict to record.
-    * `span_verified` is None when no span was ever offered (L0 answered). False means
+    * `span_verified` is None when no span was ever offered - either L0 answered, or the
+      judge returned a `denies`/`evasive` judgment that quoted nothing. False means
       checked and rejected, which is a different fact.
     * `judge_confidence` is None when no model was asked. A lexicon has no calibrated
       confidence, and inventing one would corrupt any confidence-versus-accuracy plot.
@@ -462,12 +463,20 @@ def judge_response(
             agent_response=agent_response,
         )
         if verification.ok:
+            # L2 passing is not the same as a span having been verified. Point 4 of
+            # `verify_judgment`'s docstring keeps the asymmetry deliberately: a
+            # `denies` or `evasive` judgment may omit both spans, because a response
+            # that commits to nothing has nothing to evidence. Such a judgment
+            # passes L2 without any substring check having run, so the outcome is
+            # None rather than True - and the audit row refuses True beside a null
+            # `quoted_span` for exactly this reason. Reachable whenever L0 escalates
+            # an `unclear` reply and L1 comes back with a spanless denial.
             return JudgeOutcome(
                 source="llm",
                 prefilter=prefilter_result,
                 agent_stance=judgment.agent_stance,
                 judgment=judgment,
-                span_verified=True,
+                span_verified=True if judgment.quoted_span is not None else None,
                 judge_model=active.model,
                 judge_k=1,
                 judge_completions=completions,

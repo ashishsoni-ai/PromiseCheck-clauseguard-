@@ -257,7 +257,13 @@ class AuditRow(BaseModel):
 
     # --- judge provenance ---------------------------------------------------
     judge_model: str = Field(min_length=1)
-    judge_k: int = Field(default=1, ge=1)
+    # `ge=0`, not `ge=1`. Zero means no model was sampled: DESIGN.md 4.1's L0
+    # pre-filter terminated the ladder deterministically, or the call failed before
+    # a completion came back. Both are real rows, and leaving the default at 1
+    # would make each of them claim a sample it never took. 5.1 is silent - its
+    # only example is `judge_k: 3` - so this is a decision, recorded here and in
+    # `_zero_samples_means_no_model_ran` below.
+    judge_k: int = Field(default=1, ge=0)
     judge_agreement: float | None = Field(default=None, ge=0.0, le=1.0)
     judge_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     judge_abstained: bool = False
@@ -349,11 +355,20 @@ class AuditRow(BaseModel):
                 "row carries agent_stance but no verdict_class; DESIGN.md 2 step 9 "
                 "assembles one for every (policy, agent) pair"
             )
-        if self.span_verified is None:
+        # Keyed on `quoted_span` and not on the row being a judgment at all. An L0
+        # row is a completed judgment - it carries a stance and a verdict_class -
+        # that quoted nothing, because no model ran to quote anything, and the same
+        # is true of a judged `denies` that cited no clause. There is then no check
+        # outcome to record: True would claim a substring match that never ran, and
+        # False would claim one that ran and failed. Requiring a boolean here made
+        # every L0 row unwritable, which is roughly 30% of a real run (DESIGN.md
+        # 4.1), and the runner surfaced it only because `judge.py` had documented
+        # None as the honest value for that case since Step 5.
+        if self.quoted_span is not None and self.span_verified is None:
             raise ValueError(
-                "row carries a completed judgment but span_verified is None; "
-                "commitment C2 is the claim that every judgment was mechanically "
-                "checked, and None records that the check's outcome is unknown"
+                "row quotes a clause but span_verified is None; commitment C2 is "
+                "the claim that every quote was mechanically checked, and None "
+                "records that the outcome of the check is unknown"
             )
         return self
 
@@ -439,11 +454,42 @@ class AuditRow(BaseModel):
         scoring L0's designed escalations as wrong answers: a number that cannot
         come out any other way, published as though it could.
         """
-        if self.judge_k == 1 and self.judge_agreement is not None:
+        if self.judge_k <= 1 and self.judge_agreement is not None:
+            votes = "no votes" if self.judge_k == 0 else "a single vote"
             raise ValueError(
-                "judge_agreement is set but judge_k is 1; a single vote has no "
-                "agreement, and storing 1.0 here would read as unanimity"
+                f"judge_agreement is set but judge_k is {self.judge_k}; {votes} has "
+                f"no agreement, and storing 1.0 here would read as unanimity"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _zero_samples_means_no_model_ran(self) -> AuditRow:
+        """`judge_k == 0` may not carry anything only a completion could produce.
+
+        Zero samples is how an L0 termination and a failed call are recorded.
+        Neither observed a completion, so `judge_confidence` and
+        `judge_completions` must be absent on both - and `judge_confidence` is the
+        one that would actually mislead, because DESIGN.md 4.2 reports it.
+
+        `judge_temperature` is treated differently on purpose, and the difference
+        is not cosmetic. Temperature describes the *request*, not the reply, so it
+        is a fact about a call that was made and failed - which is exactly what a
+        row with `judge_error` records. An L0 row made no call at all, so a
+        temperature on one would be the default masquerading as provenance.
+        `judge_error` is what distinguishes the two, since L0 never errors.
+        """
+        if self.judge_k != 0:
+            return self
+        forbidden = ["judge_confidence", "judge_completions"]
+        if self.judge_error is None:
+            forbidden.append("judge_temperature")
+        for name in forbidden:
+            if getattr(self, name) is not None:
+                raise ValueError(
+                    f"{name} is set but judge_k is 0, which means no completion "
+                    f"came back (L0 terminated, or the call failed). Only a "
+                    f"completed judgment could have produced that value"
+                )
         return self
 
     # ----------------------------------------------------------------------

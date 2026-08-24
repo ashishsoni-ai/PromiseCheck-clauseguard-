@@ -259,3 +259,97 @@ sentence is the commitment" becomes an explicit choice the judge has to name rat
 an implicit one it makes silently; then a second judge from a different family on the
 consequential class, which the family constraint in the first entry currently makes hard.
 **Raising k is not on that list,** and the reason is the paragraph above.
+
+## Half the probe set hands the judge a single clause, so its hardest task is not exercised
+
+**The number.** Of the 30 probes in `probes/probes.lock.json`, **16 cite exactly one
+clause**, 12 cite two and 2 cite three, drawing on 15 of the document's 20 clauses.
+
+**Why that matters is a fact about the harness, not about the probes.** There is no
+retrieval step anywhere in `clauseguard run`. `harness/execution/runner.py:545` builds the
+judge's candidate set directly from `probe.clause_ids`, so the judge is handed the probe
+author's answer key for "which clause governs this reply". On the 16 single-clause probes
+the question *"which clause does this response contradict"* has one available answer, and
+the judge cannot get it wrong. The first of `span_verify.py`'s four ordered checks —
+`cited_clause_id` must name one of the clauses the judge was shown — therefore passes on
+those probes without discriminating between a judge that read the clause and one that
+echoed the only id in front of it.
+
+**The effect on the published reliability numbers runs in the optimistic direction.** In
+production the candidate set comes from a retriever and contains near-misses. The failure
+that shape produces is already documented in this repo: on 2026-08-22 the frozen agent
+answered a swimwear question by quoting a genuine restocking-fee clause that governs
+opened electronics — a real clause, correctly quoted, about the wrong thing. That is
+precisely the error a distractor makes possible, and it is the error C2 exists to catch.
+A probe set that mostly supplies one clause cannot produce it, so whatever judge accuracy
+this slice reports is measured under conditions kinder than the ones the gate would face.
+
+**It is worst where the previous entry says the judge is weakest.** 3 of the 6 `grants`
+probes are single-clause. `grants` is the expensive judgment — the one requiring
+`entitlement_asserted`, `quoted_span` and `response_span`, the one that needed two
+completions 57% of the time, and the only stance that can land in the over-promise cell
+the whole product is built around.
+
+**Difficulty tier is not a proxy for this and cannot be used to isolate it.** The 16 split
+4 / 5 / 7 across tiers 1 / 2 / 3, so the single-clause probes are if anything concentrated
+in the *hard* tier. Reporting accuracy by tier would not separate the degenerate
+citation cases from the discriminating ones.
+
+**A related gap with no test behind it at all.** `evaluate_rules` returns a `PolicyLabel`
+carrying `clause_ids` — the clauses the *matched rule* was extracted from — and the probe
+carries its own `clause_ids`, the ones the *judge* is shown. Nothing anywhere compares the
+two. A probe could cite a clause set with no overlap at all with the rule that decided its
+label, and every check in the harness would pass. This is the same missing-verification
+family as the unresolved `source_span` gap.
+
+**What this does not mean.** The probes are not mislabelled, and C1 is untouched. A
+single-clause citation is the *correct* citation when one clause governs, and the label is
+a function of the fact vector and the rule tree only — `evaluate_rules(facts, rules)` never
+receives `probe.clause_ids`, and `ProbeScenario` has no such field. The limitation is in
+what this probe set can *measure*, not in what it asserts.
+
+**What would reduce it,** cheapest first: add a distractor clause to the candidate list of
+every single-clause probe — a near-miss the reply does not contradict — which is safe
+precisely because the label cannot move, since ground truth never reads the clause list;
+then publish mean candidate clauses per probe in the §5.2 small print, so the condition
+the accuracy was measured under travels with the number instead of living only here; then
+reconcile `PolicyLabel.clause_ids` against `probe.clause_ids` at lockfile-write time; then
+a real retriever, which is the production condition and a much larger change than this
+slice.
+
+## No probe uses a third turn, so the drift ceiling is untested
+
+**The number.** 27 of the 30 probes are single-turn. The 3 `multi_turn_drift` probes —
+`P-acme-006-multi_turn_drift-001`, `P-acme-008-multi_turn_drift-002`,
+`P-acme-018-multi_turn_drift-003` — are **all 2 turns. No probe in the set uses 3.**
+
+**What is consequently unexercised.** `Probe.turns` carries `max_length=3` and §3.1 calls
+for "2-3 turns for drift probes", so the upper bound of both the schema and the
+specification has never been run. Neither has the runner's session path at depth three:
+`_exchange_one` loops over turns holding one `session_id`, and that loop has only ever
+been driven two deep.
+
+**The substantive loss is not coverage, it is the strategy's whole point.** A drift probe
+exists to catch an agent that holds the line under pressure and concedes once the pressure
+accumulates. At two turns "accumulates" means one step, which is the weakest version of
+the test — enough to show a concession, not enough to show a *pattern* of yielding. The
+third turn is where cumulative pressure would actually be visible, and this harness
+currently has nothing to say about it.
+
+**A second gap compounds it.** Intermediate agent replies are not persisted per row; the
+audit row records the final reply. Even on the 2-turn probes the first reply is not in the
+database, so a drift finding cannot be attributed to the turn where the agent changed its
+mind. At three turns that would discard two replies out of three, which would make a
+3-turn probe substantially less informative than it looks until the storage is fixed.
+
+**What is tested.** The schema validator that rejects a `multi_turn_drift` probe with fewer
+than two turns, and the 2-turn path end to end through both phases.
+
+**Scope.** This is absent coverage, not a known defect. Nothing indicates the third turn
+is broken; equally, nothing demonstrates it works, and it should not be described as
+working until a probe drives it.
+
+**What would reduce it,** cheapest first: one 3-turn drift probe, which exercises the
+schema bound and three-deep session continuity in the same run; then persist per-turn
+replies, so a concession is attributable to a turn; then a per-turn stance trace, which is
+what would let a run report *when* the agent drifted rather than only that it did.
