@@ -12,6 +12,10 @@ every measured number with its denominator.
 
 ## What it found
 
+## Architecture
+
+![ClauseGuard Architecture](docs/architecture.png)
+
 One live run, thirty hand-written probes, one frozen agent:
 **11 over-promises out of 30 probes.** Eleven times, on a request the policy
 denies, the agent told the customer it would honour it — and each of those rows
