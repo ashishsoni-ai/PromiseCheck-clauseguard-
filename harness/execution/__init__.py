@@ -3,7 +3,11 @@
 Three modules, split along the line between what is committed and what is done:
 
     lockfiles   read/write `rules.lock.json` and `probes.lock.json`, derive versions
+    grounding   every `source_span` must be verbatim in a clause its rule cites
     runner      the two-phase run - agent fan-out, then paced judging, then rows
+
+`grounding` sits below both of the others in the import graph - `lockfiles` calls it
+when writing, `runner` calls it before phase 1 - so it imports neither.
 
 Re-exported so call sites read `from harness.execution import execute_run` rather
 than reaching into module paths, matching `harness.audit` and `harness.schemas`.
@@ -16,6 +20,13 @@ readable by someone who disagrees with the threshold.
 
 from __future__ import annotations
 
+from harness.execution.grounding import (
+    GroundingReport,
+    UngroundedSpan,
+    UngroundedSpanError,
+    assert_spans_grounded,
+    check_spans_grounded,
+)
 from harness.execution.lockfiles import (
     DEFAULT_PROBES_LOCK,
     DEFAULT_RULES_LOCK,
@@ -79,6 +90,7 @@ __all__ = [
     "AgentUnavailableError",
     "Exchange",
     "FrozenAgentMismatchError",
+    "GroundingReport",
     "HttpxAgentClient",
     "Judged",
     "LockfileError",
@@ -88,12 +100,16 @@ __all__ = [
     "RunError",
     "RunResult",
     "StaleLockfileError",
+    "UngroundedSpan",
+    "UngroundedSpanError",
     "UnresolvedClauseError",
     "agent_phase",
     "assert_clauses_resolve",
     "assert_rules_resolve",
+    "assert_spans_grounded",
     "build_row",
     "canonical_json",
+    "check_spans_grounded",
     "clause_index",
     "collect_exchanges",
     "execute_run",

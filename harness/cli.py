@@ -77,9 +77,11 @@ ENV_PATH: Final = Path(".env")
 #: reason rather than as a number:
 #:
 #:   kappa  needs the 200-item gold set of DESIGN.md 9 (Days 4-6) plus a second
-#:          labeller. Nothing in the repo holds human labels yet, and L3
-#:          consistency (harness/judge/consistency.py) is still a stub, so even
-#:          self-agreement at k=3 is unmeasured.
+#:          labeller. Nothing in the repo holds human labels yet. L3 consistency
+#:          (harness/judge/consistency.py) now runs, so `judge_agreement` is a
+#:          real measurement on the over-promise cell - but self-agreement is not
+#:          kappa. Three samples of one judge agreeing measures stability, not
+#:          correctness, and DESIGN.md 4.2's kappa is judge-versus-human.
 #:   oracle needs the verbatim-oracle agent of DESIGN.md 4.3 - one handed the
 #:          single correct clause - which does not exist yet.
 #:

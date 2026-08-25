@@ -330,11 +330,21 @@ def write_rules(
     hand-authoring script, and saying so on the face of the artefact matters:
     DESIGN.md 9 asks for hand-computed labels at this stage, and a reader should
     not have to guess whether an extractor touched it.
+
+    Span grounding is enforced here as well as in `execute_run`, and the duplication
+    is deliberate. This is the earlier and kinder of the two: it refuses at the
+    moment somebody could still fix the span, naming the rule, rather than at the
+    start of a run three commits later. But it cannot be the only place, because
+    nothing forces a `rules.lock.json` to have come through this function - it is a
+    committed JSON file that a human can open and edit, which is exactly the threat
+    model in task #47.
     """
+    from harness.execution.grounding import assert_spans_grounded
     from harness.rules_engine import validate_rule_tree
 
     validate_rule_tree(rules)
     path = Path(path)
+    assert_spans_grounded(rules, policy, source=f"the rules bound for {str(path)!r}")
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "schema": RULES_LOCK_SCHEMA,

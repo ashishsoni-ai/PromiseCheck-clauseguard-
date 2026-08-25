@@ -163,6 +163,48 @@ def sample_policy_document(make_clause) -> PolicyDocument:
     )
 
 
+@pytest.fixture
+def grounding_policy_document(make_clause, refund_clause_text) -> PolicyDocument:
+    """A document that actually contains the clause the rule fixtures cite.
+
+    `sample_policy_document` does not, and cannot be widened to: it is two short
+    clauses and `test_schemas.py` asserts that length on purpose. That was harmless
+    while nothing compared a rule against a policy, but task #47 made `write_rules`
+    refuse any rule whose `source_span` is not verbatim in a clause it cites, and
+    both `basic_grant_rule` and `depth2_rule` cite `acme-refunds:014:a3f91c22`.
+
+    So clause 14 here carries `refund_clause_text`, which contains all three distinct
+    spans those two fixtures use between them - "within 30 days of delivery",
+    "Innerwear and swimwear are excluded", "for hygiene reasons". Sharing the text
+    with `sample_clause` rather than restating it is the point: a test that writes a
+    rule and the clause that rule must ground in cannot drift apart.
+
+    The thirteen leading clauses are not padding. `PolicyDocument` requires ordinals
+    to be contiguous and 1-based because it models a whole document rather than a
+    selection from one, so a document containing ordinal 14 is fourteen clauses long.
+    They are inert - no rule and no probe cites one.
+    """
+    return PolicyDocument(
+        doc_slug="acme-refunds",
+        source="policies/acme-refunds.md",
+        policy_version="sha256:" + "9f2c" * 16,
+        fetched_at=datetime(2026, 8, 22, 11, 4, 22, tzinfo=timezone.utc),
+        corpus_role="worked_example",
+        clauses=[
+            *(
+                make_clause(
+                    text=f"Unrelated clause {i}, present so that ordinals are "
+                    f"contiguous.",
+                    ordinal=i,
+                    content_hash=f"{i:08x}",
+                )
+                for i in range(1, 14)
+            ),
+            make_clause(text=refund_clause_text, ordinal=14, content_hash="a3f91c22"),
+        ],
+    )
+
+
 # --------------------------------------------------------------------------
 # Rule fixtures
 # --------------------------------------------------------------------------

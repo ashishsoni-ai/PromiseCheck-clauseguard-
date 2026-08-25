@@ -27,13 +27,22 @@ something else, and in the real document the 30-day window is clause 006 while
 014 is the three-conditions clause. Copying ids out of conftest would have
 produced a lockfile that resolves against no policy at all.
 
-SPAN GROUNDING IS CHECKED HERE, BECAUSE NOTHING ELSE CHECKS IT
---------------------------------------------------------------
-`Condition.source_span` is documented in `harness/schemas/rule.py` as verified
-"not here", in a post-extraction step that lives in `harness/extract/` - a
-directory that does not exist. So a hand-authored lockfile could ship a
-paraphrased or invented span and nothing downstream would notice, while the
-span still appeared on audit rows as provenance (task #47).
+SPAN GROUNDING IS CHECKED HERE, AND MORE STRICTLY THAN DOWNSTREAM
+-----------------------------------------------------------------
+This section used to read "because nothing else checks it", and that was true
+when it was written: `Condition.source_span` was documented in
+`harness/schemas/rule.py` as verified "not here", in a post-extraction step
+living in a `harness/extract/` that does not exist. A hand-authored lockfile
+could ship a paraphrased or invented span and nothing downstream would notice,
+while the span still appeared on audit rows as provenance.
+
+Task #47 closed that: `harness/execution/grounding.py` now runs the same check
+from `write_rules` and again as an `execute_run` precondition. This one stays,
+and not merely as a belt-and-braces gesture - it asks a strictly stronger
+question. `Condition` carries no clause pointer, so the harness can only ask
+"is this span in AT LEAST ONE clause the rule cites?". Here the human has just
+said which clause (`a.cond(..., clause=6, ...)`), so the check is against that
+one clause. For a rule citing five clauses those are very different questions.
 
 `Author.cond` therefore checks every span against the text of the clause it
 cites, using `collapse_whitespace` - the same normaliser commitment C2 uses,
@@ -709,9 +718,9 @@ def main(argv: list[str] | None = None) -> int:
     if a.failures:
         print(
             f"\nREFUSING TO WRITE: {len(a.failures)} span(s) are not verbatim in "
-            f"the clause they cite.\nNothing in the harness verifies "
-            f"`source_span` (task #47), so an ungrounded span would ship "
-            f"silently and\nthen appear on audit rows as provenance.\n"
+            f"the clause they cite.\n`write_rules` would refuse these too (task "
+            f"#47), but against ANY cited clause, not the one\nnamed here - so this "
+            f"check is the stricter of the two and the one that says which clause.\n"
         )
         for failure in a.failures:
             print(failure)

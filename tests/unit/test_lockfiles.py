@@ -72,22 +72,32 @@ def rewrite_as_crlf(path):
 
 
 @pytest.fixture
-def written_rules(tmp_path, sample_policy_document, basic_grant_rule):
+def written_rules(tmp_path, grounding_policy_document, basic_grant_rule):
+    """A written-and-returned `rules.lock.json` path.
+
+    `grounding_policy_document` rather than `sample_policy_document` because
+    `write_rules` now refuses a rule whose `source_span` is not verbatim in a clause
+    it cites (task #47), and `basic_grant_rule` cites `acme-refunds:014:a3f91c22`.
+    Nothing in this module asserts on the policy's shape - it is passed through to be
+    stamped into the envelope - so the swap changes no expected byte except the two
+    the envelope records, `policy_doc` and `policy_version`, which are equal across
+    both fixtures.
+    """
     path = write_rules(
         tmp_path / "rules.lock.json",
         rules=[basic_grant_rule],
-        policy=sample_policy_document,
+        policy=grounding_policy_document,
         authored_by="tests",
     )
     return path
 
 
 @pytest.fixture
-def written_probes(tmp_path, sample_policy_document, sample_probe, written_rules):
+def written_probes(tmp_path, grounding_policy_document, sample_probe, written_rules):
     return write_probes(
         tmp_path / "probes.lock.json",
         probes=[sample_probe],
-        policy=sample_policy_document,
+        policy=grounding_policy_document,
         rules=load_rules(written_rules),
         authored_by="tests",
     )
@@ -124,13 +134,13 @@ class TestLineEndings:
 
 class TestDeterminism:
     def test_rewriting_unchanged_rules_produces_identical_bytes(
-        self, tmp_path, sample_policy_document, basic_grant_rule
+        self, tmp_path, grounding_policy_document, basic_grant_rule
     ):
         """A lockfile whose bytes churn between identical writes stops being
         readable evidence: every diff looks like a change to the rules."""
         kwargs = dict(
             rules=[basic_grant_rule],
-            policy=sample_policy_document,
+            policy=grounding_policy_document,
             authored_by="tests",
         )
         a = write_rules(tmp_path / "a.json", **kwargs)
@@ -138,21 +148,21 @@ class TestDeterminism:
         assert a.read_bytes() == b.read_bytes()
 
     def test_probes_are_sorted_by_id_regardless_of_input_order(
-        self, tmp_path, sample_policy_document, sample_probe, written_rules
+        self, tmp_path, grounding_policy_document, sample_probe, written_rules
     ):
         second = sample_probe.model_copy(update={"probe_id": "P-acme-001-boundary-001"})
         rules = load_rules(written_rules)
         forward = write_probes(
             tmp_path / "f.json",
             probes=[sample_probe, second],
-            policy=sample_policy_document,
+            policy=grounding_policy_document,
             rules=rules,
             authored_by="tests",
         )
         reverse = write_probes(
             tmp_path / "r.json",
             probes=[second, sample_probe],
-            policy=sample_policy_document,
+            policy=grounding_policy_document,
             rules=rules,
             authored_by="tests",
         )
@@ -196,12 +206,12 @@ class TestEnvelope:
         assert json.loads(written_rules.read_text())["authored_by"] == "tests"
 
     def test_it_creates_the_parent_directory(
-        self, tmp_path, sample_policy_document, basic_grant_rule
+        self, tmp_path, grounding_policy_document, basic_grant_rule
     ):
         path = write_rules(
             tmp_path / "deep" / "nested" / "rules.lock.json",
             rules=[basic_grant_rule],
-            policy=sample_policy_document,
+            policy=grounding_policy_document,
             authored_by="tests",
         )
         assert path.is_file()

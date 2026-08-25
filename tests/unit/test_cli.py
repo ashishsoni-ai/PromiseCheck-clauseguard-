@@ -63,6 +63,7 @@ from harness.cli import (
 )
 from harness.execution.lockfiles import load_rules, write_probes, write_rules
 from harness.ingest import diff_against_manifest, ingest, update_manifest
+from harness.judge.consistency import L3_K
 from harness.judge.judge import JudgeError
 from harness.schemas.judgment import Judgment
 from harness.schemas.probe import Probe, ProbeScenario, ProbeStrategy
@@ -76,6 +77,7 @@ from tests.unit.test_runner import (
     QUOTABLE_FROM_REPLY,
     UNFROZEN_SHA,
     WINDOW_CLAUSE_TEXT,
+    CyclingJudge,
     ExplodingJudge,
     FakeAgent,
     FakeJudge,
@@ -320,14 +322,18 @@ def run_cli(argv_for):
 def over_promising_run(slice_on_disk, run_cli):
     """The agent grants all three probes: 2 over-promises, 1 correct grant.
 
-    All three queued judgments are identical, so this does not depend on the order
-    the judge phase happens to consume them in - only on it being called once per
-    probe.
+    `CyclingJudge` rather than three queued judgments, because two of these rows
+    land in the over-promise cell and so escalate to L3: the run makes nine judge
+    calls now, not three. A queue would have to encode that arithmetic, and then a
+    change to `L3_K` would fail every test in this file that only reads the printed
+    summary - which L3 does not change, since three unanimous `grants` votes leave
+    the verdict where the first pass put it. The judgment is identical on every
+    call, so nothing here depends on the order the judge phase consumes them in.
     """
     clause_id = slice_on_disk.window.clause_id
     return run_cli(
         agent=FakeAgent(reply=GRANTING_REPLY),
-        judge=FakeJudge(*(a_grant_quoting(clause_id) for _ in range(3))),
+        judge=CyclingJudge(a_grant_quoting(clause_id)),
     )
 
 
@@ -628,14 +634,21 @@ class TestARefusedRowIsNotCreditedToThePreFilter:
         consumed in that order: the first escalation is judged, the second is
         refused. Which of the two it is does not matter to the counts, but
         fixing it keeps the over-promise total in this fixture stable.
+
+        The queue is `1 + L3_K` grants before the failure rather than one, because a
+        judged over-promise is exactly the cell L3 escalates, so the first row
+        spends four calls before the second row's first call happens. Written as
+        arithmetic on `L3_K` rather than as the number 4, so that what the fixture
+        pins stays "one row per bucket" and not "five judge calls".
         """
         escalating = {
             probe.turns[0]: GRANTING_REPLY for probe in slice_on_disk.probes[:2]
         }
+        granted = a_grant_quoting(slice_on_disk.window.clause_id)
         return run_cli(
             agent=FakeAgent(reply=DENYING_REPLY, replies=escalating),
             judge=FakeJudge(
-                a_grant_quoting(slice_on_disk.window.clause_id),
+                *([granted] * (1 + L3_K)),
                 JudgeError("502 from the provider"),
             ),
         )
@@ -699,7 +712,7 @@ class TestTheRegressionStrip:
         clause_id = slice_on_disk.window.clause_id
         _, first = run_cli(
             agent=FakeAgent(reply=GRANTING_REPLY),
-            judge=FakeJudge(*(a_grant_quoting(clause_id) for _ in range(3))),
+            judge=CyclingJudge(a_grant_quoting(clause_id)),
         )
         assert "OVER-PROMISES: 2 / 3" in first
 
@@ -717,7 +730,7 @@ class TestTheRegressionStrip:
         run_cli(agent=FakeAgent(reply=DENYING_REPLY))
         _, second = run_cli(
             agent=FakeAgent(reply=GRANTING_REPLY),
-            judge=FakeJudge(*(a_grant_quoting(clause_id) for _ in range(3))),
+            judge=CyclingJudge(a_grant_quoting(clause_id)),
         )
         new_line = next(line for line in second.splitlines() if "NEW  " in line)
         assert "P-001-boundary-001" in new_line

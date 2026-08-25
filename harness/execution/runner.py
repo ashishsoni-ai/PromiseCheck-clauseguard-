@@ -77,7 +77,14 @@ from harness.audit import (
     new_run_id,
     utc_now_iso,
 )
+from harness.execution.grounding import assert_spans_grounded
 from harness.execution.lockfiles import RulesLock
+from harness.judge.consistency import (
+    L3_TEMPERATURE,
+    ConsistencyError,
+    ConsistencyResult,
+    apply_consistency,
+)
 from harness.judge.judge import (
     JudgeError,
     JudgeOutcome,
@@ -483,10 +490,26 @@ class Judged:
     exchange: Exchange
     outcome: JudgeOutcome | None = None
     error: str | None = None
+    #: Present when L3 was *considered*, which is every non-errored row. Carries
+    #: `applied=False` for the k=1 majority of them. Kept alongside `outcome`
+    #: rather than folded into it because `JudgeOutcome` has no room for the votes
+    #: and DESIGN.md 5.1's row has no field for them either, so the only place the
+    #: tally survives is here, in memory, long enough for the CLI to report it.
+    consistency: ConsistencyResult | None = None
+    #: The temperature a *failed* judge call was made at, when it is not the run's.
+    #: Only L3 sets it, and only via `ConsistencyError`. Separate from `consistency`
+    #: because a raised L3 produces no `ConsistencyResult` to hang it on - which is
+    #: precisely why the errored row used to record the run's L1 temperature as
+    #: though the first pass had been the last thing tried.
+    error_temperature: float | None = None
 
     @property
     def used_llm(self) -> bool:
         return self.outcome is not None and self.outcome.used_llm
+
+    @property
+    def l3_applied(self) -> bool:
+        return self.consistency is not None and self.consistency.applied
 
 
 def clause_index(policy: PolicyDocument) -> dict[str, Clause]:
@@ -516,6 +539,38 @@ def assert_clauses_resolve(
         )
 
 
+class _Pacer:
+    """One rate-limit budget shared by every paid judge call in a run.
+
+    Extracted from `judge_exchanges`'s loop when L3 arrived, and for a concrete
+    reason rather than tidiness. The old arithmetic paced *between probes*, which
+    was complete while one probe meant one or two calls. An L3 row is up to four,
+    and three consecutive samples fired with no wait between them would hit the
+    8000 tokens/minute ceiling inside a single iteration - the exact thing
+    `DEFAULT_JUDGE_PACE_S` exists to prevent. Routing the samples through the same
+    debt is what keeps one pace for one provider.
+
+    Debt is booked after a call and paid before the next, so a run never sleeps
+    after its final call. `charge(0)` is deliberately free: an L0 termination spent
+    no tokens, and pacing after it would add 16.5 seconds per deterministic verdict
+    to a run whose whole point is finishing inside DESIGN.md 2's budget.
+    """
+
+    def __init__(self, pace_s: float, sleep: Callable[[float], None]) -> None:
+        self._pace_s = pace_s
+        self._sleep = sleep
+        self._pending = 0.0
+
+    def wait(self) -> None:
+        if self._pending > 0:
+            self._sleep(self._pending)
+            self._pending = 0.0
+
+    def charge(self, completions: int) -> None:
+        if completions > 0:
+            self._pending = self._pace_s * completions
+
+
 def judge_exchanges(
     exchanges: Sequence[Exchange],
     *,
@@ -525,6 +580,8 @@ def judge_exchanges(
     pace_s: float = DEFAULT_JUDGE_PACE_S,
     sleep: Callable[[float], None] = time.sleep,
     on_progress: Callable[[int, int, Judged], None] | None = None,
+    consistency: bool = True,
+    gold_probe_ids: Sequence[str] = (),
 ) -> list[Judged]:
     """Judge every exchange in order, pacing only the calls that hit the model.
 
@@ -532,49 +589,100 @@ def judge_exchanges(
     without waiting eight minutes for it.
 
     Pacing skips L0 terminations, because a deterministic pre-filter verdict
-    spends no tokens. It is applied *between* model-touching probes and scaled by
-    the previous probe's completion count, since L1's retry is a second paid call
+    spends no tokens. It is applied *between* model-touching calls and scaled by
+    the previous call's completion count, since L1's retry is a second paid call
     against the same per-minute ceiling. That scaling is conservative rather than
     exact - the true budget is tokens, not calls - and the honest limit is that a
     long response can still exceed 8000 tokens/minute on its own. Task #33 tracks
     the token-aware limiter that would fix it.
+
+    THIS IS WHERE THE GROUND-TRUTH LABEL ENTERS THE JUDGE PIPELINE
+    -------------------------------------------------------------
+    `judge_response` never sees `expected_policy_stance`; this function does,
+    because it holds the `Probe`. DESIGN.md 4.1's L3 needs the label to find the
+    over-promise cell, so the escalation decision is taken here and the label is
+    handed to `apply_consistency`, which spends compute and cannot write a prompt.
+    Keeping those two capabilities apart is what stops the answer leaking into the
+    question - see `harness/judge/consistency.py`'s opening section.
+
+    `consistency=False` disables L3 for a whole run. It exists because L3 roughly
+    quadruples the paid calls on an over-promise, and at 16.5s of pacing each, a
+    probe set with a dozen of them adds around nine minutes - DESIGN.md 4.1
+    predicts exactly this ("triple cost and latency"). Turning it off buys a
+    *cheaper and weaker* measurement, never a faster equivalent one, and a run that
+    does so says so on every row, because `judge_k` stays 1.
     """
     results: list[Judged] = []
-    pending_pace = 0.0
+    pacer = _Pacer(pace_s, sleep)
+    gold = tuple(gold_probe_ids)
 
     for position, exchange in enumerate(exchanges, start=1):
-        if pending_pace > 0:
-            sleep(pending_pace)
-            pending_pace = 0.0
-
         candidates = [
             clauses[cid] for cid in exchange.probe.clause_ids if cid in clauses
         ]
-        try:
+
+        def ask(
+            temp: float | None,
+            _ex: Exchange = exchange,
+            _cands: Sequence[Clause] = candidates,
+        ) -> JudgeOutcome:
+            """One paid judge call, paced. Also L3's sampler for this exchange.
+
+            The exchange and its candidate clauses are bound as default arguments
+            rather than captured, because a closure over the loop variable would
+            make every sampler read the *last* exchange - and that bug is invisible
+            offline, where a fake judge answers the same way whatever it is asked.
+            """
+            pacer.wait()
             outcome = judge_response(
-                probe_turns=exchange.probe.turns,
-                agent_response=exchange.final.reply,
-                candidate_clauses=candidates,
+                probe_turns=_ex.probe.turns,
+                agent_response=_ex.final.reply,
+                candidate_clauses=list(_cands),
                 client=client,  # type: ignore[arg-type]
-                temperature=temperature,
+                temperature=temp,
             )
-            judged = Judged(exchange=exchange, outcome=outcome)
+            pacer.charge(outcome.judge_completions)
+            return outcome
+
+        try:
+            first_pass = ask(temperature)
+            if consistency:
+                resolved = apply_consistency(
+                    first_pass,
+                    sample=ask,
+                    expected_policy_stance=exchange.probe.expected_policy_stance,
+                    probe_id=exchange.probe.probe_id,
+                    gold_probe_ids=gold,
+                )
+            else:
+                resolved = ConsistencyResult(outcome=first_pass, applied=False)
+            judged = Judged(
+                exchange=exchange, outcome=resolved.outcome, consistency=resolved
+            )
         except JudgeError as exc:
             # Deliberately not caught wider than JudgeError. A bug in row
             # assembly must not be recorded as a judge failure and then read as
             # "the backend was flaky" on the report.
-            judged = Judged(exchange=exchange, error=f"{type(exc).__name__}: {exc}")
-
-        results.append(judged)
-        if judged.used_llm:
-            assert judged.outcome is not None
-            pending_pace = pace_s * max(1, judged.outcome.judge_completions)
-        elif judged.error is not None:
+            #
+            # An L3 failure lands here too, and it takes the first pass down with
+            # it. That is the intended cost of the ruling that a withdrawn verdict
+            # may not fall back on the sample that produced it: once resampling has
+            # failed to confirm a stance, recording that stance anyway would put a
+            # number in the confusion matrix the consistency layer just declined to
+            # stand behind.
+            judged = Judged(
+                exchange=exchange,
+                error=f"{type(exc).__name__}: {exc}",
+                error_temperature=(
+                    exc.temperature if isinstance(exc, ConsistencyError) else None
+                ),
+            )
             # A transport failure still consumed an attempt on the provider's
             # side, so pace after it too - retrying a rate limit at full speed is
             # how a run turns one 429 into thirty.
-            pending_pace = pace_s
+            pacer.charge(1)
 
+        results.append(judged)
         if on_progress is not None:
             on_progress(position, len(exchanges), judged)
 
@@ -643,6 +751,24 @@ def build_row(judged: Judged, context: RowContext) -> AuditRow:
     reply = judged.exchange.final
     outcome = judged.outcome
 
+    # An L3 row's verdict was decided by samples at `L3_TEMPERATURE`, not by the
+    # run-wide L1 temperature, so recording the latter would be a false provenance
+    # note on the rows most likely to be argued over. `RowContext` carries one
+    # temperature because it is one per run for L1; L3 is the only thing that
+    # varies it, and it varies it to a constant this module can read.
+    #
+    # The third arm is a row L3 *failed* on. It has no `ConsistencyResult`, so
+    # `l3_applied` is False and it would otherwise record the run's 0.0 - reading as
+    # though the first pass were the last call made, when in fact three more were
+    # attempted at 0.3. `ConsistencyError` carries the temperature for exactly this
+    # case; `AuditRow` permits it on an errored row because temperature describes a
+    # request, and those requests were made.
+    row_temperature = context.judge_temperature
+    if judged.l3_applied:
+        row_temperature = L3_TEMPERATURE
+    elif judged.error_temperature is not None:
+        row_temperature = judged.error_temperature
+
     common = dict(
         row_id=new_row_id(),
         run_id=context.run_id,
@@ -675,7 +801,7 @@ def build_row(judged: Judged, context: RowContext) -> AuditRow:
             judge_k=0,
             judge_agreement=None,
             judge_confidence=None,
-            judge_temperature=context.judge_temperature,
+            judge_temperature=row_temperature,
             judge_completions=None,
             judge_error=judged.error,
         )
@@ -691,7 +817,7 @@ def build_row(judged: Judged, context: RowContext) -> AuditRow:
             judge_agreement=outcome.judge_agreement,
             judge_confidence=None,
             judge_abstained=True,
-            judge_temperature=context.judge_temperature,
+            judge_temperature=row_temperature,
             judge_completions=outcome.judge_completions or None,
         )
 
@@ -713,7 +839,7 @@ def build_row(judged: Judged, context: RowContext) -> AuditRow:
         judge_k=outcome.judge_k,
         judge_agreement=outcome.judge_agreement,
         judge_confidence=outcome.judge_confidence,
-        judge_temperature=context.judge_temperature if outcome.used_llm else None,
+        judge_temperature=row_temperature if outcome.used_llm else None,
         judge_completions=outcome.judge_completions or None,
     )
 
@@ -758,6 +884,29 @@ class RunResult:
             1 for row in self.rows if row.verdict_class is VerdictClass.UNDER_SERVE
         )
 
+    @property
+    def l3_escalations(self) -> int:
+        """How many rows DESIGN.md 4.1's k=3 was spent on."""
+        return sum(1 for item in self.judged if item.l3_applied)
+
+    @property
+    def l3_withdrawals(self) -> int:
+        """How many over-promises L3 took off the headline number.
+
+        Worth reporting next to `over_promises` rather than buried, because it is
+        the size of the correction the consistency layer applied to the project's
+        own flagship metric. A large number here is not a bug: it means k=1 was
+        over-counting, which is the finding. Read it with the module docstring in
+        `harness/judge/consistency.py` - L3 cannot make this number negative, so it
+        bounds the over-count from one side only.
+        """
+        return sum(
+            1
+            for item in self.judged
+            if item.consistency is not None
+            and item.consistency.left_the_over_promise_cell
+        )
+
 
 def execute_run(
     *,
@@ -772,6 +921,8 @@ def execute_run(
     judge_temperature: float | None = None,
     judge_pace_s: float = DEFAULT_JUDGE_PACE_S,
     sleep: Callable[[float], None] = time.sleep,
+    consistency: bool = True,
+    gold_probe_ids: Sequence[str] = (),
     require_frozen: bool = False,
     gate_run: bool = False,
     on_agent_done: Callable[[int], None] | None = None,
@@ -786,20 +937,41 @@ def execute_run(
 
     `sleep` and the two progress callbacks are injected so the offline suite can
     drive a full thirty-probe run in milliseconds and still assert on the pacing.
+
+    `consistency` and `gold_probe_ids` are DESIGN.md 4.1's L3 knobs, forwarded
+    unchanged to `judge_exchanges` - see its docstring for why turning L3 off is a
+    weaker measurement rather than a faster one. `gold_probe_ids` has no caller yet
+    because the 200-item gold set is still a stub (`scripts/label_gold.py`); it is a
+    parameter now so that the escalation rule lives in one place when it arrives.
     """
     import anyio
 
     run_id = run_id or new_run_id()
     clauses = clause_index(policy)
-    # Three preconditions, cheapest first, all pure. The lockfile check comes
-    # first because it is the one that invalidates the other two: if the rules
-    # were authored against different clause text, then every `rule_version` a
-    # row would carry names a digest computed over a policy nobody is running,
-    # and the probe-level checks below would be verifying the wrong thing
-    # carefully.
+    # Four preconditions, all pure. The lockfile check comes first because it is
+    # the one that invalidates the rest: if the rules were authored against
+    # different clause text, then every `rule_version` a row would carry names a
+    # digest computed over a policy nobody is running, and the checks below would
+    # be verifying the wrong thing carefully.
+    #
+    # Span grounding sits second, with the other rules-versus-policy check, before
+    # the two probe-level ones. It is the most expensive of the four - a substring
+    # scan per condition per cited clause - and still microseconds, so ordering is
+    # by what invalidates what rather than by cost.
     rules.assert_matches_policy(policy)
+    grounding = assert_spans_grounded(rules.rules, policy, source=str(rules.path))
     assert_clauses_resolve(probes, clauses)
     assert_rules_resolve(probes, rules)
+
+    # Ungrounded-but-flagged spans are allowed through (see `grounding`'s module
+    # docstring on why `needs_human_review` is the spec's escape hatch), but they
+    # do not get to be quiet about it: every run says so.
+    span_warnings = [
+        f"rule {failure.rule_id} condition {failure.attribute} has an ungrounded "
+        f"source_span {failure.source_span!r}, allowed only because the rule is "
+        f"flagged needs_human_review"
+        for failure in grounding.flagged
+    ]
 
     agent_started = time.perf_counter()
     identity, exchanges, warnings = anyio.run(
@@ -814,6 +986,11 @@ def execute_run(
     agent_seconds = time.perf_counter() - agent_started
     if on_agent_done is not None:
         on_agent_done(len(exchanges))
+
+    # Span-grounding warnings lead: they are about the rules the whole run rests
+    # on, so a reader should see them before the per-agent ones. `agent_phase`
+    # returns a fresh list, so prepending here does not mutate anything shared.
+    warnings = span_warnings + list(warnings)
 
     judge_started = time.perf_counter()
     # Resolved here rather than left as None. `judge_response(temperature=None)`
@@ -831,6 +1008,8 @@ def execute_run(
         pace_s=judge_pace_s,
         sleep=sleep,
         on_progress=on_judge_progress,
+        consistency=consistency,
+        gold_probe_ids=gold_probe_ids,
     )
     judge_seconds = time.perf_counter() - judge_started
 

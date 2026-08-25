@@ -494,8 +494,13 @@ class TestAgreementBelongsToAVote:
         assert row.judge_k == 3
 
     def test_k_of_3_without_agreement_is_allowed(self, make_audit_row):
-        """L3 is stubbed as of Step 6; a row may record that k=3 was requested
-        before the agreement plumbing exists."""
+        """k=3 with no agreement is a real L3 outcome, not just a stub artefact.
+
+        `harness/judge/consistency.py` emits exactly this shape when three samples
+        were drawn and none returned a stance: the samples are paid for, so `judge_k`
+        is 3, but there was nothing to agree or disagree about, so agreement stays
+        null rather than becoming a 0.0 that would read as measured disagreement.
+        """
         assert make_audit_row(judge_k=3).judge_agreement is None
 
     def test_agreement_at_k_of_0_is_refused(self, make_audit_row):

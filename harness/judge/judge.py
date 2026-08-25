@@ -84,9 +84,12 @@ Two different counts that are easy to conflate, and conflating them corrupts two
 different slides.
 
 `judge_k` is DESIGN.md 4.1's consistency parameter - the number of independent samples
-majority-voted at temp 0.3. It is 0 when L0 answered (no model ran) and 1 everywhere else
-until L3 lands. `judge_completions` is how many times this module actually asked a model
-for a judgment, so a C2 retry makes it 2 with `judge_k` still 1.
+majority-voted at temp 0.3. This module never sets it above 1: it is 0 when L0 answered
+(no model ran) and 1 on every path through `judge_response`, because a single judgment is
+one sample however many attempts it took to parse. `harness/judge/consistency.py` is what
+raises it to 3, by drawing further samples through this module and voting them.
+`judge_completions` is how many times this module actually asked a model for a judgment,
+so a C2 retry makes it 2 with `judge_k` still 1.
 
 Summing `judge_completions` is what substantiates DESIGN.md 4.1's claim that L0 "kills
 ~30% of LLM calls"; summing `judge_k` would understate the retry cost, and reading
@@ -100,12 +103,16 @@ component the expected stance, DESIGN.md 4.1 gives the LLM only the probe, the r
 and the clauses, and both are true because the component needs the label to decide *how
 much compute to spend*, never as evidence.
 
-That distinction only becomes load-bearing at L3, which applies k=3 exclusively to
-judgments landing on the over-promise cell - a cell you cannot identify without the
-policy stance. L3 is a later step and `harness/judge/consistency.py` is still a stub, so
-the parameter is documented here rather than added unused. When it arrives, the
-constraint on it is one sentence long: it may select the sampling policy and must never
-reach `build_judge_user_prompt`.
+That distinction becomes load-bearing at L3, which applies k=3 exclusively to judgments
+landing on the over-promise cell - a cell you cannot identify without the policy stance.
+L3 now exists, and it is deliberately *not* here: `harness/judge/consistency.py` holds it,
+`harness/execution/runner.py`'s judge loop passes it the label, and the label still never
+enters this module. An earlier draft of this note reserved a parameter on
+`judge_response` for it; that was the wrong shape. A label in the same function as the
+prompt builder is one refactor away from being in the prompt, and the seam that makes that
+impossible is worth more than the convenience. What the runner hands `consistency.py` is a
+callable back into `judge_response`, so the escalation layer can spend money and cannot
+write a prompt.
 
 Note the direction of that asymmetry, because it is the honest reading and worth saying
 out loud in the walkthrough: spending k=3 on suspected over-promises can only *reduce*
@@ -267,8 +274,9 @@ __all__ = [
 DEFAULT_JUDGE_MODEL: Final = "groq/openai/gpt-oss-20b"
 JUDGE_MODEL_ENV: Final = "CLAUSEGUARD_JUDGE_MODEL"
 
-#: DESIGN.md 4.1: L1 runs at temp 0.0. L3's 0.3 is a different knob for a different layer
-#: and is not read here.
+#: DESIGN.md 4.1: L1 runs at temp 0.0. L3's 0.3 lives in `harness/judge/consistency.py`
+#: as `L3_TEMPERATURE` and is passed *into* this module as an argument, never read from
+#: here - one constant per layer, so neither can drift into the other's calls.
 DEFAULT_JUDGE_TEMP: Final = 0.0
 JUDGE_TEMP_ENV: Final = "CLAUSEGUARD_JUDGE_TEMP"
 

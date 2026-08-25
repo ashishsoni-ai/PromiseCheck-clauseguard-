@@ -10,11 +10,18 @@ schema would leave to runtime live here instead. A `Condition` with op "<=" and
 value ["footwear"] is not a rule the evaluator should have to defend itself
 against; it is a rule that should never have been constructed.
 
-WHERE `source_span` IS VERIFIED: not here. Checking that a span appears verbatim
-in its clause needs the clause text, which a Condition deliberately does not
-carry. That check is a post-extraction step (DESIGN.md 2 step 2: "every
-source_span must be a substring of the clause, else retry once, then flag
-needs_human_review") and lives in harness/extract/.
+WHERE `source_span` IS VERIFIED: not here, but no longer nowhere. Checking that a
+span appears verbatim in its clause needs the clause text, which a Condition
+deliberately does not carry - so the check cannot be a validator on this model.
+It lives in `harness/execution/grounding.py`, which has both a rule set and a
+`PolicyDocument` to hand, and it runs from `write_rules` and again as an
+`execute_run` precondition (DESIGN.md 2 step 2: "every source_span must be a
+substring of the clause, else retry once, then flag needs_human_review").
+
+That is why `needs_human_review` below is required rather than defaulted. It is
+not documentation: an ungrounded span on a rule flagged for review is reported and
+allowed to run, and an ungrounded span on a rule that claims to be settled makes
+the harness refuse.
 """
 
 from __future__ import annotations

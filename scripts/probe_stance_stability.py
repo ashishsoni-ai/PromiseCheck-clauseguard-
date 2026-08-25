@@ -365,7 +365,7 @@ def verdict(
             "  A deterministic system cannot disagree with itself on identical input, so\n"
             "  no sample-size argument is needed: the judge is nondeterministic at temp 0.\n"
             "  -> DESIGN.md 4.1's L3 (k=3, temp 0.3, majority) is the indicated remedy and\n"
-            "     harness/judge/consistency.py should stop being a stub.\n"
+            "     is implemented in harness/judge/consistency.py.\n"
             "  -> But note L3's asymmetry: it re-runs judgments landing on the OVER-PROMISE\n"
             "     cell. This failure flips grants->denies, which LEAVES that cell, so L3 as\n"
             "     specified would never fire on it. The gold set is the designed control for\n"
@@ -423,7 +423,7 @@ def verdict(
                 "  which is the direction that hides an over-promise. Note that k=3 majority\n"
                 "  voting does NOT fix this: the perturbation is fixed for a given probe, so\n"
                 "  all three votes are drawn under the same bias. This one belongs in\n"
-                "  limitations.md whatever L3 ends up doing."
+                "  limitations.md, and L3 shipping does not close it."
             )
 
     # Cache detection for arm A: identical bytes could be served from a provider cache,

@@ -7,14 +7,16 @@ assembly, and none of it should need a container, a key or a provider.
 
 WHAT THESE TESTS ARE FOR
 ------------------------
-`harness/execution/runner.py` makes five claims in prose. Each one is pinned here,
+`harness/execution/runner.py` makes six claims in prose. Each one is pinned here,
 because a claim in a docstring is a comment and a claim in a test is a constraint:
 
   1. probe order survives out-of-order completion (`TestOrderSurvives...`);
   2. the semaphore really caps at 8 and really parallelises (`TestTheSemaphore...`);
   3. one session per probe, reused across a multi-turn probe's own turns;
   4. an agent outage leaves ZERO rows, and a judge outage leaves a row that says so;
-  5. pacing is skipped for L0 and scaled by the previous probe's completions.
+  5. pacing is skipped for L0 and scaled by the previous probe's completions;
+  6. an over-promise reaches L3's vote, and its samples are paced too
+     (`TestL3RunsInsideTheJudgePhase` - the only class here that turns L3 on).
 
 The one in (4) is the load-bearing pair. A run that half-wrote itself would give
 `reconcile()` a denominator nobody chose, and DESIGN.md 5.2 prints that denominator
@@ -44,6 +46,7 @@ from harness.execution.runner import (
     judge_exchanges,
     new_session_id,
 )
+from harness.judge.consistency import L3_K, L3_TEMPERATURE
 from harness.judge.judge import JudgeError
 from harness.schemas.judgment import Judgment
 from harness.schemas.probe import Probe, ProbeScenario, ProbeStrategy
@@ -283,7 +286,21 @@ def runner_policy(make_clause):
                 )
                 for i in range(1, 14)
             ),
-            make_clause(text=WINDOW_CLAUSE_TEXT, ordinal=14, content_hash="a3f91c22"),
+            make_clause(
+                # WINDOW_CLAUSE_TEXT grounds the root rule's span; the two trailing
+                # sentences ground the exception spans in conftest's `depth2_rule`
+                # ("Innerwear and swimwear are excluded", "for hygiene reasons"), so
+                # that the whole tree passes `assert_spans_grounded` (task #47). The
+                # constant itself is left untouched because test_cli.py builds its own
+                # clause text from it and must not shift.
+                text=(
+                    WINDOW_CLAUSE_TEXT
+                    + " Innerwear and swimwear are excluded once opened, for hygiene"
+                    " reasons."
+                ),
+                ordinal=14,
+                content_hash="a3f91c22",
+            ),
         ],
     )
 
@@ -555,9 +572,20 @@ def run_slice(rules_lock, runner_policy, store):
     `judge_temperature` is passed explicitly rather than left to
     `resolve_judge_temp()`, so a machine with `JUDGE_TEMPERATURE` exported cannot
     change what these tests assert a row records.
+
+    L3 is off by default here, which is the opposite of production. Most of the
+    tests below pair `GRANTING_REPLY` with `make_probe`'s default
+    `expected_policy_stance="denies"`, because that is the over-promise cell and
+    the cell is what the slice exists to measure - so with L3 on, almost every
+    test in this file would silently become a test of the k=3 vote as well, and a
+    row-assembly assertion would start depending on how many judgments the fake
+    happened to have queued. Turning it off keeps each assertion about one layer.
+    Pass `consistency=True` to opt back in; `TestL3RunsInsideTheJudgePhase` does,
+    and is where the escalated path is covered end to end.
     """
 
     def _run(probes, agent, judge, *, sleep=None, **kwargs):
+        kwargs.setdefault("consistency", False)
         return execute_run(
             probes=probes,
             rules=rules_lock,
@@ -727,6 +755,13 @@ class TestAJudgeOutageLeavesARowThatSaysSo:
         assert "connection reset by peer" in row.judge_error
         assert row.judge_abstained is False
         assert row.judge_k == 0
+        # The run's temperature, not L3's. `build_row` only substitutes
+        # `L3_TEMPERATURE` for a `ConsistencyError`, and this failure came from the
+        # L1 pass - so the pair of assertions here and in
+        # `test_a_vote_that_could_not_be_taken_is_an_error_and_not_an_abstention`
+        # pin both arms, which is the only thing stopping that branch collapsing
+        # back into "errored rows record 0.0".
+        assert row.judge_temperature == 0.0
         assert row.verdict_class is None
         assert row.agent_stance is None
         # The exchange survived: the row still carries what the agent said, which
@@ -934,6 +969,144 @@ class TestPreconditionsFailBeforeAnythingIsSpent:
         assert "R-014-a" in str(caught.value)
 
 
+class TestAHandEditedSpanIsRefusedBeforeTheAgentIsTouched:
+    """Task #47's threat model, exercised through the real loader.
+
+    `write_rules` checks span grounding, so a lockfile written by the harness cannot
+    carry a fabricated span. But nothing forces a `rules.lock.json` to have come
+    through that function - it is committed JSON that a human can open and edit, and
+    `load_rules` takes only a path, so it has no policy to check against and cannot
+    close this itself. That is why the check is also an `execute_run` precondition.
+
+    These tests therefore corrupt the file on disk rather than constructing a
+    `RulesLock` by hand: the point is that the whole read path accepts the edit and
+    the runner is what stops it.
+    """
+
+    @staticmethod
+    def _edit_span(path, old, new):
+        """Rewrite one `source_span` in a written lockfile, proving the edit landed."""
+        import json
+
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        raw = json.dumps(payload)
+        assert old in raw, f"{old!r} is not in the lockfile, so the edit is a no-op"
+        path.write_text(
+            json.dumps(payload).replace(old, new), encoding="utf-8", newline="\n"
+        )
+        assert new in path.read_text(encoding="utf-8"), "the edit missed the file"
+        return path
+
+    def test_an_ungrounded_span_aborts_the_run(
+        self, tmp_path, depth2_rule, runner_policy, store, make_probe
+    ):
+        from harness.execution.grounding import UngroundedSpanError
+        from harness.execution.lockfiles import load_rules, write_rules
+
+        path = write_rules(
+            tmp_path / "rules.lock.json",
+            rules=[depth2_rule],
+            policy=runner_policy,
+            authored_by="tests",
+        )
+        self._edit_span(
+            path, "within 30 days of delivery", "within ninety days of purchase"
+        )
+        agent = FakeAgent()
+
+        with pytest.raises(UngroundedSpanError, match="not verbatim in any clause"):
+            execute_run(
+                probes=[make_probe("P-000")],
+                rules=load_rules(path),
+                policy=runner_policy,
+                agent=agent,
+                store=store,
+                judge_client=ExplodingJudge(),
+            )
+
+        # The whole value of a precondition is that it is free. A check that fired
+        # after the fan-out would cost thirty agent calls to learn something a
+        # substring scan knew before the first one.
+        assert agent.health_calls == 0
+        assert agent.calls == []
+        assert store.rows() == []
+        assert store.run_ids() == []
+
+    def test_the_writer_refuses_the_same_edit_and_creates_no_file(
+        self, tmp_path, depth2_rule, runner_policy
+    ):
+        """The earlier and kinder of the two checks, and it leaves no artefact.
+
+        `assert_spans_grounded` runs before `path.parent.mkdir`, so a refused write
+        does not leave a directory behind suggesting something was written there.
+        """
+        from harness.execution.grounding import UngroundedSpanError
+        from harness.execution.lockfiles import write_rules
+
+        broken = depth2_rule.model_copy(deep=True)
+        broken.conditions[0].source_span = "within ninety days of purchase"
+        out = tmp_path / "deep" / "rules.lock.json"
+
+        with pytest.raises(UngroundedSpanError):
+            write_rules(
+                out, rules=[broken], policy=runner_policy, authored_by="tests"
+            )
+
+        assert not out.exists()
+        assert not out.parent.exists()
+
+
+class TestAFlaggedUngroundedSpanRunsAndSaysSo:
+    """DESIGN.md 194's retry-then-flag path stays runnable, but not quiet.
+
+    An extractor that cannot ground a span is told to set `needs_human_review=True`
+    rather than to give up, so refusing such a rule outright would make the spec's
+    own path unusable. The cost of allowing it is that a run could rest on an
+    unverified provenance claim silently - so it is surfaced through
+    `RunResult.warnings`, which `harness/cli.py` already prints on every run.
+    """
+
+    def test_the_run_completes_and_warns_naming_the_rule(
+        self, tmp_path, depth2_rule, runner_policy, store, make_probe
+    ):
+        from harness.execution.lockfiles import load_rules, write_rules
+
+        # The nested exception is the node conftest flags for review, so breaking
+        # its span exercises the flagged arm without touching the settled nodes.
+        flagged = depth2_rule.model_copy(deep=True)
+        nested = flagged.exceptions[0].exceptions[0]
+        assert nested.needs_human_review is True, "conftest's depth2_rule changed shape"
+        nested.conditions[0].source_span = "for reasons of hygiene"
+
+        path = write_rules(
+            tmp_path / "rules.lock.json",
+            rules=[flagged],
+            policy=runner_policy,
+            authored_by="tests",
+        )
+
+        result = execute_run(
+            probes=[make_probe("P-000")],
+            rules=load_rules(path),
+            policy=runner_policy,
+            agent=FakeAgent(),
+            store=store,
+            # `CyclingJudge` rather than `ExplodingJudge`: `FakeAgent`'s default reply
+            # is terminal at L0 so the judge should not be called, but this test is
+            # about the warning and not about L0, and it should not fail for the
+            # wrong reason if the pre-filter's verdict on that reply ever changes.
+            judge_client=CyclingJudge(a_spanless_denial()),
+            judge_temperature=0.0,
+            sleep=lambda seconds: None,
+        )
+
+        assert len(store.rows()) == 1, "the run has to actually complete"
+        span_warnings = [w for w in result.warnings if "ungrounded source_span" in w]
+        assert len(span_warnings) == 1
+        assert nested.rule_id in span_warnings[0]
+        assert "needs_human_review" in span_warnings[0]
+
+
 # ==========================================================================
 # Phase 2 pacing - the 8000 tokens/minute ceiling
 # ==========================================================================
@@ -946,6 +1119,13 @@ class TestJudgePacingSpendsOnlyOnCallsThatHappened:
     actually made and not the ones L0 answered for free - a 30-probe run where
     ~30% terminate at L0 pays 16.5s thirty times if the pacing is unconditional,
     and that is minutes of wall clock bought for nothing.
+
+    Every test here passes `consistency=False`. These pin L1's pacing arithmetic
+    one call at a time, and an escalated probe makes four calls instead of one, so
+    with L3 on the asserted sleep lists would be measuring the vote's cost mixed in
+    with the retry's. L3's own pacing is asserted separately, and asserting it
+    separately is the point: if the two were tested together a bug that stopped
+    pacing the samples could hide inside a list that still had the right length.
     """
 
     def _exchanges(self, probes, agent):
@@ -991,6 +1171,7 @@ class TestJudgePacingSpendsOnlyOnCallsThatHappened:
             clauses=clause_index(runner_policy),
             client=FakeJudge(a_verified_grant()),
             sleep=recorded_sleeps,
+            consistency=False,
         )
 
         assert recorded_sleeps.calls == []
@@ -1013,6 +1194,7 @@ class TestJudgePacingSpendsOnlyOnCallsThatHappened:
             clauses=clause_index(runner_policy),
             client=CyclingJudge(a_verified_grant()),
             sleep=recorded_sleeps,
+            consistency=False,
         )
 
         # One wait, between the two probes that actually reached the model.
@@ -1037,6 +1219,7 @@ class TestJudgePacingSpendsOnlyOnCallsThatHappened:
                 a_fabricated_quote(), a_fabricated_quote(), a_verified_grant()
             ),
             sleep=recorded_sleeps,
+            consistency=False,
         )
 
         assert judged[0].outcome is not None
@@ -1057,6 +1240,7 @@ class TestJudgePacingSpendsOnlyOnCallsThatHappened:
             clauses=clause_index(runner_policy),
             client=FakeJudge(JudgeError("429 rate limited"), a_verified_grant()),
             sleep=recorded_sleeps,
+            consistency=False,
         )
 
         assert recorded_sleeps.calls == [DEFAULT_JUDGE_PACE_S]
@@ -1076,6 +1260,7 @@ class TestJudgePacingSpendsOnlyOnCallsThatHappened:
             client=CyclingJudge(a_verified_grant()),
             pace_s=0.0,
             sleep=recorded_sleeps,
+            consistency=False,
         )
 
         assert recorded_sleeps.calls == []
@@ -1362,6 +1547,241 @@ class TestTheAbstainedRow:
         assert "YOUR PREVIOUS ANSWER WAS REJECTED" in retry
         assert "quoted_span was not found verbatim" in retry
         assert judge.calls[0]["temperature"] == judge.calls[1]["temperature"] == 0.0
+
+
+# ==========================================================================
+# L3 - the k=3 vote, where it meets the row
+# ==========================================================================
+class TestL3RunsInsideTheJudgePhase:
+    """DESIGN.md 2 step 8 through the runner: escalation, pacing, provenance.
+
+    The vote itself is decided in `harness/judge/consistency.py` and tested in
+    isolation in `tests/unit/test_consistency.py`, where it needs no client and no
+    clauses. What can only be tested here is the wiring: that an over-promise
+    reaches the vote at all, that its three samples are paced against the same token
+    ceiling as every other call, and that the row records the temperature the
+    verdict was actually decided at rather than the run's configured one.
+
+    Every other test in this file runs with `consistency=False`, so this class is
+    the whole of L3's integration coverage. Deleting it would leave `judge_k` free
+    to be 1 on every row in the codebase with nothing failing.
+    """
+
+    def test_an_over_promise_is_escalated_and_the_row_carries_the_vote(
+        self, run_slice, make_probe
+    ):
+        result = run_slice(
+            [make_probe("P-000")],
+            FakeAgent(reply=GRANTING_REPLY),
+            CyclingJudge(a_verified_grant()),
+            consistency=True,
+        )
+
+        row = result.rows[0]
+        assert result.l3_escalations == 1
+        assert row.judge_k == L3_K == 3
+        assert row.judge_agreement == 1.0
+        assert row.agent_stance == "grants"
+        assert row.judge_abstained is False
+        assert row.verdict_class is VerdictClass.OVER_PROMISE
+
+    def test_the_row_records_the_temperature_the_verdict_was_decided_at(
+        self, run_slice, make_probe
+    ):
+        """0.3, not the 0.0 the run was configured with.
+
+        The vote is what decided this row, and a row claiming 0.0 would be a false
+        provenance note on exactly the rows a reviewer is most likely to argue
+        about. The pair with the test below is the point: the field is per row.
+        """
+        result = run_slice(
+            [make_probe("P-000")],
+            FakeAgent(reply=GRANTING_REPLY),
+            CyclingJudge(a_verified_grant()),
+            consistency=True,
+        )
+
+        assert result.rows[0].judge_temperature == L3_TEMPERATURE == 0.3
+
+    def test_an_unescalated_row_in_the_same_run_keeps_the_runs_temperature(
+        self, run_slice, make_probe
+    ):
+        """Per row, which is the arithmetic that is easy to get wrong exactly once.
+
+        A single temperature resolved for the whole run would label every k=1 row
+        0.3 as soon as one row escalated - so a correct grant nobody voted on would
+        carry the vote's provenance, and the audit file would stop being able to
+        tell the two apart.
+        """
+        probes = [
+            make_probe("P-000"),
+            make_probe("P-001", expected_policy_stance="grants"),
+        ]
+        result = run_slice(
+            probes,
+            FakeAgent(reply=GRANTING_REPLY),
+            CyclingJudge(a_verified_grant()),
+            consistency=True,
+        )
+
+        escalated, untouched = result.rows
+        assert result.l3_escalations == 1
+        assert escalated.judge_k == L3_K
+        assert escalated.judge_temperature == L3_TEMPERATURE
+        # Same reply, same judgment, same run - and not the consequential class.
+        assert untouched.judge_k == 1
+        assert untouched.judge_agreement is None
+        assert untouched.judge_temperature == 0.0
+
+    def test_the_samples_are_paced_against_the_same_ceiling(
+        self, make_probe, runner_policy, recorded_sleeps
+    ):
+        """Three consecutive samples with no wait between them is a 429.
+
+        This is why pacing moved out of the probe loop when L3 arrived. One probe
+        used to mean one or two calls; it now means up to four, and the ceiling is
+        8000 tokens a minute for the provider, not for the loop.
+        """
+        exchanges = anyio.run(
+            lambda: collect_exchanges(
+                [make_probe("P-000")], FakeAgent(reply=GRANTING_REPLY), concurrency=1
+            )
+        )
+
+        judged = judge_exchanges(
+            exchanges,
+            clauses=clause_index(runner_policy),
+            client=CyclingJudge(a_verified_grant()),
+            sleep=recorded_sleeps,
+            consistency=True,
+        )
+
+        assert judged[0].l3_applied is True
+        # Four calls, so three waits: the debt is paid before a call and never
+        # after the last one.
+        assert recorded_sleeps.calls == [DEFAULT_JUDGE_PACE_S] * L3_K
+
+    def test_a_two_one_vote_takes_the_row_out_of_the_headline_cell(
+        self, run_slice, make_probe
+    ):
+        """The correction, end to end: `grants` at 0.0, two `denies` at 0.3.
+
+        This is the only shape that changes the number the project publishes, so it
+        is asserted on the run's own counters and not just on the outcome object.
+        """
+        result = run_slice(
+            [make_probe("P-000")],
+            FakeAgent(reply=GRANTING_REPLY),
+            FakeJudge(
+                a_verified_grant(),
+                a_spanless_denial(),
+                a_spanless_denial(),
+                a_verified_grant(),
+            ),
+            consistency=True,
+        )
+
+        row = result.rows[0]
+        assert result.over_promises == 0
+        assert result.l3_withdrawals == 1
+        assert row.agent_stance == "denies"
+        assert row.judge_k == L3_K
+        assert row.judge_agreement == pytest.approx(2 / 3)
+        assert row.verdict_class is VerdictClass.CORRECT_DENIAL
+
+    def test_a_row_the_samples_split_on_is_abstained_and_not_scored(
+        self, run_slice, make_probe
+    ):
+        """1-1-1 withdraws the verdict rather than keeping the first pass.
+
+        The third judgment is built here rather than taken from the named builders
+        above because the split needs three distinct stances and `evasive` is the
+        only one none of them produce.
+        """
+        an_evasive_dodge = Judgment(
+            agent_stance="evasive",
+            entitlement_asserted=None,
+            cited_clause_id=None,
+            quoted_span=None,
+            response_span=None,
+            reasoning="The reply discusses the return without committing either way.",
+            confidence=0.6,
+        )
+        result = run_slice(
+            [make_probe("P-000")],
+            FakeAgent(reply=GRANTING_REPLY),
+            FakeJudge(
+                a_verified_grant(),
+                a_verified_grant(),
+                a_spanless_denial(),
+                an_evasive_dodge,
+            ),
+            consistency=True,
+        )
+
+        row = result.rows[0]
+        assert result.over_promises == 0
+        assert result.l3_withdrawals == 1
+        assert row.judge_abstained is True
+        assert row.agent_stance is None
+        assert row.judge_k == L3_K
+        assert row.judge_agreement == pytest.approx(1 / 3)
+        assert row.judge_error is None
+
+    def test_a_vote_that_could_not_be_taken_is_an_error_and_not_an_abstention(
+        self, run_slice, make_probe
+    ):
+        """One vote and two transport failures. The row says what happened.
+
+        DESIGN.md 4.2's abstain rate must not absorb the provider's failures, so
+        this raises inside L3 and the runner writes the errored row it writes for
+        any other `JudgeError`. `judge_temperature` is `L3_TEMPERATURE` and not the
+        run's 0.0: no verdict was decided at any temperature, but the calls that
+        failed were made at 0.3, and temperature describes the request rather than
+        the reply - which is why `AuditRow._zero_samples_means_no_model_ran` permits
+        a temperature on a row with `judge_error` at all. Recording 0.0 here would
+        say the last thing tried was the L1 pass, and it was not.
+        """
+        result = run_slice(
+            [make_probe("P-000")],
+            FakeAgent(reply=GRANTING_REPLY),
+            FakeJudge(
+                a_verified_grant(),
+                a_verified_grant(),
+                JudgeError("429 rate limited"),
+                JudgeError("429 rate limited"),
+            ),
+            consistency=True,
+        )
+
+        row = result.rows[0]
+        assert row.judge_error is not None
+        assert "no honest abstention" in row.judge_error
+        assert row.judge_abstained is False
+        assert row.judge_k == 0
+        assert row.judge_temperature == L3_TEMPERATURE == 0.3
+        assert result.l3_escalations == 0
+
+    def test_the_opt_out_leaves_the_row_at_k_of_one(self, run_slice, make_probe):
+        """What the rest of this file depends on, asserted once here.
+
+        `run_slice` defaults `consistency=False`, and if that default ever stopped
+        working the failures would appear as queue exhaustion in unrelated tests -
+        so the flag gets its own assertion rather than being inferred from theirs.
+        """
+        result = run_slice(
+            [make_probe("P-000")],
+            FakeAgent(reply=GRANTING_REPLY),
+            CyclingJudge(a_verified_grant()),
+        )
+
+        row = result.rows[0]
+        assert result.l3_escalations == 0
+        assert result.l3_withdrawals == 0
+        assert row.judge_k == 1
+        assert row.judge_agreement is None
+        assert row.judge_temperature == 0.0
+        assert row.verdict_class is VerdictClass.OVER_PROMISE
 
 
 # ==========================================================================

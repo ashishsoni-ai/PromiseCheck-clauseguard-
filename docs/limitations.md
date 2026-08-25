@@ -234,6 +234,24 @@ in the design that covers the recall direction, which is why it has to contain
 refuse-then-commit response shapes; without them, nothing in the harness would have
 caught this.
 
+**As of this build L3 is implemented** in `harness/judge/consistency.py`, so the two
+paragraphs above describe live behaviour rather than a plan. Three specifics that follow
+from the implementation and not from §4.1. A row where the three samples split with no
+majority **abstains**, so it leaves the headline metrics and enters the abstain rate —
+"require majority" is read literally, which means L3 can convert a verdict into an
+abstention but never into the opposite verdict. An abstaining or failing sample does not
+vote, and a row with fewer than two surviving votes abstains as well; if the reason it
+has fewer than two is a transport failure rather than a judge abstention, the row is
+recorded as an **error**, not an abstention, so a rate-limit storm cannot inflate the
+abstain rate. And `judge_agreement` is the winning bloc as a fraction of k=3, not of the
+votes actually cast, so `1.0` means three samples agreed and nothing weaker.
+
+**`judge_agreement` is not a quality metric and must not be quoted as one.** It measures
+whether the judge repeats itself, and the perturbation effect above is exactly the case
+where it repeats itself confidently and wrongly — three unanimous votes on a probe
+carrying an order reference are three draws under the same bias. Stability and
+correctness come apart here, and only the gold set measures the second one.
+
 **Arm A's rate is not the judge's accuracy and must not be quoted as it.** Real probes
 carry order references, dates, amounts and names, so **arm B is the realistic
 condition.** 13/14 describes the judge on a fixture stripped of incidental detail, which
@@ -313,8 +331,10 @@ citation cases from the discriminating ones.
 carrying `clause_ids` — the clauses the *matched rule* was extracted from — and the probe
 carries its own `clause_ids`, the ones the *judge* is shown. Nothing anywhere compares the
 two. A probe could cite a clause set with no overlap at all with the rule that decided its
-label, and every check in the harness would pass. This is the same missing-verification
-family as the unresolved `source_span` gap.
+label, and every check in the harness would pass. This was one of two gaps in the same
+missing-verification family; the other, `source_span`, is now checked (see "Span grounding
+asks a weaker question than the authoring script does" below), which leaves this one as the
+family's last unverified member.
 
 **What this does not mean.** The probes are not mislabelled, and C1 is untouched. A
 single-clause citation is the *correct* citation when one clause governs, and the label is
@@ -405,6 +425,47 @@ request, a model id that expired — stays fatal. Retrying those would spend quo
 nothing and then, because exhausting these retries abstains rather than raises, file a
 harness defect away as judicial humility. That is the failure mode this narrowness exists
 to prevent, and it is pinned by tests in `tests/unit/test_ratelimit.py`.
+
+## Span grounding asks a weaker question than the authoring script does
+
+**What is now checked.** As of task #47, `harness/execution/grounding.py` verifies that
+every condition's `source_span` is a verbatim substring — under `collapse_whitespace`, the
+same normaliser C2 uses — of a clause its rule cites. It runs from `write_rules` and again
+as an `execute_run` precondition, so a hand-edited `rules.lock.json` inventing text that
+appears in the policy nowhere is refused before any probe runs. This closes the gap the
+`author_rules.py` docstring used to describe as "nothing else checks it".
+
+**Where it is weaker than authoring.** `scripts/author_rules.py` checks each span against
+*one specific clause*, because at authoring time the human says which:
+`a.cond(..., clause=6, span=...)`. The harness cannot ask that, because `Condition` carries
+no clause pointer — the clause link lives one level up, on `EntitlementRule.clause_ids`,
+which is a list. So the strongest question available to the harness is "is this span
+verbatim in *at least one* of the clauses its rule cites?". For a single-clause rule the two
+questions are identical; for a multi-clause rule they are not. A span grounded in the rule's
+clause 003 while the human meant clause 007 passes the harness check.
+
+**How much of the real corpus this actually touches.** In the committed
+`rules/rules.lock.json`, 14 of the 19 rule nodes are single-clause, where the check is
+exact. The remaining 5 are multi-clause and *require* the union semantics rather than merely
+tolerating it: they deliberately draw spans from different clauses among the several they
+cite, so a per-node "must be in the first cited clause" rule would wrongly refuse them. The
+widest is `refund-hygiene-category-excluded`, which cites five clauses (003, 008, 009, 010,
+011) for two conditions; its spans are dispersed across that set by design. 11 of the 29
+condition spans live on these 5 nodes.
+
+**Why the weaker check is still worth having.** The threat model at this stage is not a
+subtly mis-attributed span within a rule's own cited set — it is a fabricated span, or a
+future extractor's hallucination, that matches no clause in the policy at all. The union
+check catches that, and catches it at write time and again before a run. Tightening it to
+per-clause would require either giving `Condition` a clause pointer (a schema change that
+DESIGN.md 3.1 does not sanction) or reconstructing which cited clause each span was meant
+for (guesswork the authoring script avoids precisely by having the human say). Neither is in
+scope for this slice, so the gap is recorded rather than closed.
+
+**What it does not weaken.** C1 is untouched: `evaluate_rules` reads `attribute`, `op` and
+`value` and never reads `source_span`, so a mis-attributed-but-grounded span produces the
+same deterministic label it always did. What the gap bounds is provenance precision — how
+exactly a reviewer can trace a rule to the clause it encodes — not label correctness.
 
 **What would reduce it.** In order of honesty gained: a 39th field naming the abstention
 cause, which needs the DESIGN.md field list reopened; or a judge model whose
