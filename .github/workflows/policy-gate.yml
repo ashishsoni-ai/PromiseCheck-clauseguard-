@@ -1,3 +1,53 @@
 # Clauseguard conformance gate (DESIGN.md 6.1). Implemented in a later step.
 # Filename matches 6.1's `policy-gate.yml`; renamed from clauseguard-gate.yml
 # 2026-08-22 after the spec-fidelity audit.
+#
+# THIS IS A PLACEHOLDER AT THE PATH 6.1 SPECIFIES, NOT A WORKING GATE.
+# `clauseguard check` is wired to cmd_unimplemented and deliberately refuses to
+# run, so CI has nothing to call yet. Two consequences shape this file:
+#
+#   1. The only trigger is `workflow_dispatch`. 6.1's real trigger is
+#      `pull_request` on `paths: ['policies/**']`, kept commented below until the
+#      gate exists. A workflow that fired on every policy edit and went green
+#      without checking anything would be the exact failure README names: "a gate
+#      that exits 0 without having checked anything is worse than no gate."
+#   2. `jobs` is not optional. A comments-only file under .github/workflows/
+#      parses to an empty document and fails validation with "No event triggers
+#      defined in `on`", which surfaced as a red run on every push. A trigger
+#      alone does not fix that -- GitHub's schema requires `on` AND `jobs` -- so
+#      the placeholder carries one real job that states what it did not do.
+
+name: "Policy gate (NOT BUILT - placeholder)"
+
+on:
+  workflow_dispatch:
+
+# The trigger DESIGN.md 6.1 specifies. When `clauseguard check` gains its
+# exit-code contract, uncomment this, delete the not-built job, and implement
+# 6.1's four steps (checkout; docker compose up -d aut-naive + wait-for-aut.sh;
+# clauseguard check --max-overpromise 0 --junit report.xml; junit-report@v4).
+#
+#  pull_request:
+#    paths: ['policies/**']
+
+permissions:
+  contents: read
+
+jobs:
+  not-built:
+    name: "Reports that the gate does not exist yet"
+    runs-on: ubuntu-latest
+    steps:
+      - name: State what was not checked
+        run: |
+          echo "::notice title=Clauseguard policy gate is not built::This workflow checked no policies and gated nothing. clauseguard check is wired to cmd_unimplemented and refuses to run. See README.md, 'The CI gate'."
+          echo "clauseguard check: not implemented."
+          echo
+          echo "This job inspected NO policies and gated NOTHING. It exists only"
+          echo "so the file at the path DESIGN.md 6.1 names is a valid workflow"
+          echo "rather than a validation error on every push."
+          echo
+          echo "Still missing, per README.md 'The CI gate':"
+          echo "  - the exit-code contract for 'clauseguard check'"
+          echo "  - --baseline, so a threshold can mean 'no worse than main'"
+          echo "  - the JUnit annotation that lands a reviewer on the bad line"
