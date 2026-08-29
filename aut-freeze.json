@@ -9,6 +9,16 @@
       "image": "clauseguard/aut-naive:aut-naive-v1",
       "repo_head": "bcaebf4fa9c5421425857d08314ac676a01dc3c8",
       "tree_hash": "39be323e8b39ca0dc6fb922ff69a86352f8704ba"
+    },
+    "aut-strong": {
+      "corpus": {
+        "acme-refunds.md": "sha256:8deeef5a99cf5d849a66adbaeb28042bc58c977061e0ce91cf88922775ab628f"
+      },
+      "frozen_at": "2026-08-29T08:05:49+00:00",
+      "git_tag": "aut-strong-v1",
+      "image": "clauseguard/aut-strong:aut-strong-v1",
+      "repo_head": "961b5eb9e6da9038b1e84daccbcbebc338137387",
+      "tree_hash": "2fd0c5d1f3fa42318480ea1ed409aa6a89d2deb3"
     }
   },
   "schema_version": 1

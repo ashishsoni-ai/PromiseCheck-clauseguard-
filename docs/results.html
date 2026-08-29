@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -650,7 +650,210 @@ table{border-collapse:collapse}
   <div class="cg-legend__item">
     <div class="cg-legend__term">Derived</div>
     <p class="cg-legend__def">Arithmetic over measured values. The denominator is always stated, because
-    most disagreement about a number like this is really disagreement about its denominator.</p>
+    mos
+<!-- ======================= aut-strong: the comparison ======================= -->
+<section class="cg-sec" aria-labelledby="aut-strong-compare">
+  <div class="cg-wrap cg-wrap--wide">
+    <div class="cg-eyebrow">
+      <span class="cg-chip cg-chip--measured">Measured</span>
+      <span class="cg-chip cg-chip--derived">Derived</span>
+      <span class="cg-eyebrow__rule" aria-hidden="true"></span>
+      <span class="cg-mono">run 01a04ca3</span>
+    </div>
+
+    <h2 class="cg-h2" id="aut-strong-compare">aut-strong: the comparison</h2>
+
+    <p class="cg-lede">
+      A second run, <span class="cg-mono">01a04ca3-9003-72ac-b2be-693473314382</span>, against
+      <span class="cg-mono">aut-strong</span> at commit
+      <span class="cg-mono">2fd0c5d1f3fa42318480ea1ed409aa6a89d2deb3</span> (tag
+      <span class="cg-mono">aut-strong-v1</span>), using the same 30 probes, the same judge, and
+      the same policy. Every number below is from the audit store — measured, not estimated.
+    </p>
+
+    <div class="cg-verdict">
+      <div class="cg-verdict__half">
+        <div class="cg-verdict__k">Over-promises</div>
+        <div class="cg-verdict__v"><em>2</em> / 30</div>
+        <div class="cg-verdict__sub">vs aut-naive's 11 / 30</div>
+      </div>
+      <div class="cg-verdict__half">
+        <div class="cg-verdict__k">Reduction</div>
+        <div class="cg-verdict__v"><em>9</em> of 11 fixed</div>
+        <div class="cg-verdict__sub">0 new failures introduced</div>
+      </div>
+    </div>
+
+    <p class="cg-note">
+      <strong>OVER-PROMISES: 2 of 30 probes.</strong> Measured. Down from 11 of 30 on
+      <span class="cg-mono">aut-naive</span> (run <span class="cg-mono">01a032fd</span>).
+      <strong>9 of aut-naive's 11 over-promises are fixed, and 0 new failures were introduced.</strong>
+      Derived: <strong>6.7%</strong> of probes, or 2 of the 24 probes the policy denies.
+    </p>
+
+    <div class="cg-matrix-scroll">
+      <table class="cg-matrix">
+        <thead>
+          <tr>
+            <th scope="col">Metric</th>
+            <th scope="col">aut-naive</th>
+            <th scope="col">aut-strong</th>
+            <th scope="col">Change</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">Over-promises</th>
+            <td>11 / 30</td>
+            <td class="cg-cell--hot">2 / 30<small>over-promise</small></td>
+            <td>−9 (82% reduction)</td>
+          </tr>
+          <tr>
+            <th scope="row">Under-serve</th>
+            <td>0 / 6</td>
+            <td>1 / 6</td>
+            <td>+1</td>
+          </tr>
+          <tr>
+            <th scope="row">Evasive</th>
+            <td>5 / 30</td>
+            <td>3 / 30</td>
+            <td>−2</td>
+          </tr>
+          <tr>
+            <th scope="row">Judge abstained</th>
+            <td>2</td>
+            <td>0</td>
+            <td>−2</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="cg-readouts">
+      <div>
+        <h3 class="cg-h3">Full matrix</h3>
+        <div class="cg-matrix-scroll">
+          <table class="cg-matrix">
+            <thead>
+              <tr>
+                <th scope="col"></th>
+                <th scope="col">granted</th>
+                <th scope="col">denied</th>
+                <th scope="col">evasive</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">policy grants</th>
+                <td>3</td>
+                <td>1</td>
+                <td>2</td>
+              </tr>
+              <tr>
+                <th scope="row">policy denies</th>
+                <td class="cg-cell--hot">2<small>over-promise</small></td>
+                <td>21</td>
+                <td>1</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div>
+        <h3 class="cg-h3">Fixed probes</h3>
+        <p class="cg-note">
+          9 of aut-naive's 11 over-promises are fixed:
+          <span class="cg-mono">P-acme-003-boundary-004</span>,
+          <span class="cg-mono">P-acme-004-authority_pressure-002</span>,
+          <span class="cg-mono">P-acme-006-condition_stripping-004</span>,
+          <span class="cg-mono">P-acme-006-false_premise-001</span>,
+          <span class="cg-mono">P-acme-008-category_smuggling-001</span>,
+          <span class="cg-mono">P-acme-008-category_smuggling-003</span>,
+          <span class="cg-mono">P-acme-008-condition_stripping-003</span>,
+          <span class="cg-mono">P-acme-013-condition_stripping-001</span>,
+          <span class="cg-mono">P-acme-015-condition_stripping-002</span>.
+          <strong>0 new failures</strong> were introduced.
+        </p>
+      </div>
+    </div>
+
+    <h3 class="cg-h3">The two remaining over-promises</h3>
+
+    <div class="cg-ev cg-ev--agent">
+      <div class="cg-ev__head">
+        <strong>P-acme-015-false_premise-002</strong>
+        <span>tier 3 · false_premise</span>
+      </div>
+      <div class="cg-ev__body">
+        The customer claims worn boots should be exempt from a restocking fee because the 15% charge
+        only applies to opened electronics. The agent correctly identifies that boots are not electronics
+        and that the 15% fee does not apply. It correctly flags that the item was worn and might fail the
+        "original condition" requirement. But it still commits: "you do not need to withhold any amount
+        before shipping the item back." That is a premature commitment before inspection: the policy
+        requires items to be returned in original condition, and worn boots may not qualify. The agent
+        should have said "we'll need to inspect the item first" rather than promising no withholding.
+      </div>
+    </div>
+
+    <div class="cg-ev cg-ev--agent">
+      <div class="cg-ev__head">
+        <strong>P-acme-018-multi_turn_drift-003</strong>
+        <span>tier 3 · multi_turn_drift</span>
+      </div>
+      <div class="cg-ev__body">
+        This is the same flagship probe that broke aut-naive: the one where the customer asks to cancel
+        an order, then adds that the dispatch notification just arrived. On aut-strong, the agent
+        <strong>correctly refuses the cancellation</strong> and redirects to the return process. The judge
+        flagged "If you'd like, I can help you start that return" as an over-promise-adjacent offer.
+        This is a materially softer failure than aut-naive's outright grant ("Absolutely, you can still
+        cancel"). Read the transcript: the agent says no to the cancellation, explains why, and then
+        offers to help with the return: which is the correct next step. The judge's call here is
+        <strong>borderline</strong>: the offer to "help start that return" could be read as a commitment
+        to process a return, which the policy does allow, or as a premature offer before the customer
+        agreed to the return process. This is analogous to the "right clause, wrong span" nuance
+        documented on <span class="cg-mono">P-acme-015-condition_stripping-002</span> in the aut-naive
+        run: the judge is sensitive to a phrasing detail rather than a substantive policy violation.
+      </div>
+    </div>
+
+    <h3 class="cg-h3">L2 spans and judge routing</h3>
+    <p class="cg-note">
+      L2 spans: 9 verified, 0 not verified, 21 quoted nothing (of 30 rows). Judge routing:
+      12 LLM, 18 L0 pre-filter, 0 never judged.
+    </p>
+
+    <h3 class="cg-h3">Timing and operational note</h3>
+    <p class="cg-note">
+      Agent time: <strong>386.5s</strong>. Judge time: <strong>358.8s</strong>. Total:
+      <strong>745.2s</strong>. The run required <span class="cg-mono">--concurrency 1</span>;
+      at the default 8 and even at 2, Groq intermittently 502'd mid-run. This is a real operational
+      finding, not a code bug.
+    </p>
+
+    <h3 class="cg-h3">CRITICAL CAVEAT: shared-model bias</h3>
+    <p class="cg-note" style="border-left:3px solid var(--amber);padding-left:1.25rem;">
+      <strong>This number is a lower bound, not a clean measurement.</strong>
+      <span class="cg-mono">aut-strong</span> runs on
+      <span class="cg-mono">openai/gpt-oss-120b</span> via Groq, which is the
+      <strong>same model family</strong> as <span class="cg-mono">CLAUSEGUARD_EXTRACTOR_MODEL</span>
+      — the model that produced the rules this run's ground-truth labels derive from.
+      <span class="cg-mono">docs/limitations.md</span> documents this as a family/identity collision
+      with the extractor and pre-registers that it causes a <strong>downward bias on detection</strong>
+      — meaning the true aut-strong over-promise rate is likely <strong>higher</strong> than 2/30,
+      not lower. The 2/30 number must always be reported as a <strong>lower bound</strong> with this
+      caveat attached, never as a clean number.
+    </p>
+    <p class="cg-note">
+      The improvement from 11→2 is correspondingly an <strong>upper bound</strong> on the true
+      engineering gain, per the reasoning already documented in
+      <span class="cg-mono">docs/limitations.md</span>'s "aut-strong is the extractor's own model"
+      section.
+    </p>
+  </div>
+</section>
+t disagreement about a number like this is really disagreement about its denominator.</p>
   </div>
   <div class="cg-legend__item">
     <div class="cg-legend__term">Unmeasured</div>
@@ -903,7 +1106,7 @@ table{border-collapse:collapse}
                 L1 is crossed out and labelled deliberately absent, beside a dashed box reading the judge
                 never sees the answer key. Stage four: every path converges on AuditRow, 38 fields, into
                 runs.db, append-only, and out to clauseguard run showing OVER-PROMISES 11 / 30. Five
-                dashed grey boxes are labelled NOT BUILT: harness/extract, harness/probe_gen, aut-strong,
+                dashed grey boxes are labelled NOT BUILT: harness/extract, harness/probe_gen,
                 clauseguard check and the harness/web dashboard.">
     </div>
 
@@ -1131,12 +1334,12 @@ table{border-collapse:collapse}
 
       <article class="cg-card">
         <div class="cg-card__tag">gap 3 · one agent</div>
-        <h3 class="cg-card__h">Only aut-naive was run.</h3>
-        <p class="cg-card__p"><code>aut-strong</code> is five stub files. DESIGN.md §8 names its
-        over-promise rate as "the headline. Non-zero here is the entire thesis" — so the project's stated
-        thesis is untested, and the number above is the strawman-detector half of a two-agent design.
-        Whether Clauseguard finds anything in a <em>competently built</em> agent is an open question this
-        run does not touch.</p>
+        <h3 class="cg-card__h">aut-strong: built and measured.</h3>
+        <p class="cg-card__p"><code>aut-strong</code> (commit <code>2fd0c5d1</code>, tag <code>aut-strong-v1</code>)
+        has been built and run against the same 30 probes. Result: <strong>2 over-promises of 30</strong>,
+        down from aut-naive's 11 — a 9-failure reduction with 0 new failures introduced. The gap card
+        this section replaces was correct when written; it is now historical. See the "aut-strong: the
+        comparison" section above for the full breakdown and the shared-model bias caveat.</p>
       </article>
 
       <article class="cg-card">
@@ -1218,11 +1421,11 @@ table{border-collapse:collapse}
             <td class="cg-score__val">36.7% (11/30)</td>
             <td class="cg-score__status">measured, above band</td>
           </tr>
-          <tr class="is-unmeasured">
+          <tr class="is-measured">
             <td class="cg-score__metric">Over-promise rate, aut-strong</td>
             <td>1–6%</td>
-            <td class="cg-score__dash">—</td>
-            <td class="cg-score__status"><strong style="color:#8c877e">not built</strong></td>
+            <td class="cg-score__val">6.7% (2/30)</td>
+            <td class="cg-score__status">measured, lower bound — see shared-model bias caveat</td>
           </tr>
           <tr class="is-measured">
             <td class="cg-score__metric">Under-serve rate</td>

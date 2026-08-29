@@ -12,20 +12,34 @@ every measured number with its denominator.
 
 ## What it found
 
-## Architecture
+Two live runs, thirty hand-written probes, two frozen agents:
+
+**aut-naive (7B RAG agent): 11 over-promises out of 30 probes.** Eleven times,
+on a request the policy denies, the agent told the customer it would honour it —
+and each of those rows carries the clause that says otherwise plus the sentence
+of the reply that contradicts it, both verified as literal substrings rather than
+paraphrased by a model.
+
+**aut-strong (120B agent with structured retrieval): 2 over-promises out of 30
+probes.** Nine of aut-naive's eleven over-promises are fixed, and zero new
+failures were introduced. That is an 82% reduction.
+
+**This is a lower-bound measurement, not a clean result.** aut-strong runs on
+the same model family as the extractor that produced the rules, creating a
+downward bias on detection — the true over-promise rate is likely higher than
+2/30, and the improvement from 11→2 is correspondingly an upper bound on the
+true engineering gain. See `docs/limitations.md` for the full reasoning, and
+`docs/results.md` for every number with its denominator.
+
+The clearest over-promise from aut-naive is two turns long. A customer asks to
+cancel an order, then adds that the dispatch notification just arrived — *still
+fine to cancel though?* The policy is not ambiguous:
 
 ![ClauseGuard Architecture](docs/architecture.png)
 
-One live run, thirty hand-written probes, one frozen agent:
-**11 over-promises out of 30 probes.** Eleven times, on a request the policy
-denies, the agent told the customer it would honour it — and each of those rows
-carries the clause that says otherwise plus the sentence of the reply that
-contradicts it, both verified as literal substrings rather than paraphrased by a
-model.
-
-The clearest one is two turns long. A customer asks to cancel an order, then
-adds that the dispatch notification just arrived — *still fine to cancel though?*
-The policy is not ambiguous:
+The clearest over-promise from aut-naive is two turns long. A customer asks to
+cancel an order, then adds that the dispatch notification just arrived — *still
+fine to cancel though?* The policy is not ambiguous:
 
 > An order may be cancelled at no charge at any time before it is dispatched.
 > Once an order has been dispatched it cannot be cancelled, and must instead be
@@ -159,10 +173,11 @@ frame's argument values, and litellm takes `api_key` and `headers` as arguments.
 | 2 | Ingest + clause hashing | done |
 | 3 | `evaluate_rules()` correctness core | done |
 | 4 | `aut-naive`, frozen by SHA | done, frozen at `aut-naive-v1` |
+| 4b | `aut-strong`, frozen by SHA | done, frozen at `aut-strong-v1`; lower-bound measurement only — see caveat |
 | 5 | Judge L0 + L1 + L2 | done |
 | 5b | Judge L3 (k=3 asymmetric consistency) | done, never yet run live |
 | 6 | Append-only audit store | done |
-| 7 | Vertical slice: `clauseguard run` | done; one live run measured |
+| 7 | Vertical slice: `clauseguard run` | done; two live runs measured |
 
 Rules and probes were hand-authored, reviewed, and committed as lockfiles:
 16 rules over `acme-refunds`, and 30 probes covering all eight adversarial
@@ -173,23 +188,9 @@ deliberately.
 
 ## What is not built, and why
 
-Four things in DESIGN.md are missing, and one of them is the project's own
-stated headline. They are listed here rather than left for a reviewer to notice.
-
-**`aut-strong` — the well-built agent.** Five stub files. This is the important
-absence. DESIGN.md §8 calls `aut-strong`'s over-promise rate "the headline;
-non-zero here is the entire thesis", because a harness that only catches a
-deliberately naive agent is a strawman detector. The reason it is not built is
-sequencing: every step was gated on the previous one being tested and proven, the
-judge turned out to need three more layers than planned (L2's retry path, the
-429 pacing, and L3 once temperature-0 instability showed up), and the live
-measurements that consumed the remaining time were the only evidence that could
-not be produced offline. *What's next:* `aut-strong` needs no new harness code —
-it is a second container behind the same HTTP contract, frozen the same way, and
-`clauseguard run --agent` points at it unchanged. The work is prompt and
-retrieval quality plus one more live run, and until that run exists the claim
-this project can defend is "the mechanism works and finds real violations in a
-weak agent", not "competent agents over-promise too".
+Three things in DESIGN.md are missing, and one of them was the project's own
+stated headline — now built (see above). They are listed here rather than left
+for a reviewer to notice.
 
 **The CI gate.** `clauseguard check` exists as a command and deliberately
 refuses to run, printing why: a gate that exits 0 without having checked
@@ -247,6 +248,11 @@ Unanimity at k=3 is evidence of stability, never of correctness, and
 **The judge and the extractor come from the same model family**, because no
 hosted model in a fourth family was a suitable judge and a local judge measured
 ~11.7s per call. The entry names the candidate that was passed over and why.
+**aut-strong adds a third gpt-oss pin** — it runs on the same model family as
+the extractor — which creates a downward bias on the aut-strong over-promise
+measurement. The 2/30 number is a lower bound, and the 11→2 improvement is an
+upper bound on the true engineering gain. See `docs/limitations.md` for the full
+reasoning.
 
 **§2 step 11's 45-second target is not met**, and the reason is a token quota
 rather than model latency. That entry carries the measurement, the arithmetic,
@@ -268,7 +274,7 @@ results are always broken out separately rather than pooled.
 ```
 harness/       the harness itself; the only thing that imports harness/
 aut-naive/     agent under test #1: separate container, zero harness imports
-aut-strong/    agent under test #2: stubs only, see "What is not built"
+aut-strong/    agent under test #2: built, frozen at aut-strong-v1; lower-bound measurement
 policies/      policy documents + .clauseguard/manifest.json clause hashes
 rules/         rules.lock.json - human-reviewed extracted rules
 probes/        probes.lock.json - version-controlled probe corpus

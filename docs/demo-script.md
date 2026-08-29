@@ -329,11 +329,11 @@ they've read the policy.
 > DESIGN.md asks for six metrics and this run measures four of them. Saying what
 > I didn't achieve out loud:
 >
-> **`aut-strong` isn't built.** The design calls its over-promise rate the
-> headline, because a harness that only catches a deliberately weak agent is a
-> strawman detector. It needs no new harness code — same HTTP contract, same
-> freeze, one more run — but until that run exists the claim is "this finds real
-> violations in a weak agent", not "good agents over-promise too".
+> **`aut-strong` exists now and shows a real reduction** — 2 over-promises vs 11
+> from aut-naive, an 82% cut. But the number is a lower bound: aut-strong runs on
+> the same model family as the extractor, creating a downward bias on detection.
+> The design calls its over-promise rate the headline, and it is now tested —
+> with the caveat that the true rate is likely higher than 2/30.
 >
 > **The gold set is empty**, so there is no Cohen's kappa, no judge precision or
 > recall, and no false-alarm rate. Nothing here is a claim that the judge is
