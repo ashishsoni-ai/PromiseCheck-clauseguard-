@@ -143,7 +143,7 @@ summary: the over-promise count in large type, the 2×3 matrix, the failure tabl
 with both verified spans side by side, and small print carrying the judge model,
 abstain rate, probe count and policy version hash. Its exit status reflects
 whether the run *completed*, not what it found — the pass/fail decision belongs
-to the gate, and the gate is not built.
+to `clauseguard check`, which is built and tested (see "What is built" above).
 
 Expect it to take **roughly eight minutes**, not the 45 seconds DESIGN.md §2
 targets. The hosted judge answers in about 0.9s; the binding constraint is
@@ -178,6 +178,7 @@ frame's argument values, and litellm takes `api_key` and `headers` as arguments.
 | 5b | Judge L3 (k=3 asymmetric consistency) | done, never yet run live |
 | 6 | Append-only audit store | done |
 | 7 | Vertical slice: `clauseguard run` | done; two live runs measured |
+| 8 | CI gate: `clauseguard check` + `clauseguard report` | done | `--max-overpromise` (absolute threshold) and `--baseline` (vs previous run); `--annotations` for GitHub Actions inline warnings; `clauseguard-report.md` written alongside audit store |
 
 Rules and probes were hand-authored, reviewed, and committed as lockfiles:
 16 rules over `acme-refunds`, and 30 probes covering all eight adversarial
@@ -188,19 +189,8 @@ deliberately.
 
 ## What is not built, and why
 
-Three things in DESIGN.md are missing, and one of them was the project's own
-stated headline — now built (see above). They are listed here rather than left
+Two things in DESIGN.md are missing. They are listed here rather than left
 for a reviewer to notice.
-
-**The CI gate.** `clauseguard check` exists as a command and deliberately
-refuses to run, printing why: a gate that exits 0 without having checked
-anything is worse than no gate. The harness half is done — `gate_run` is a
-column in every audit row, and the run already produces the count a threshold
-would compare against. *What's next:* the exit-code contract, a `--baseline`
-comparison so a threshold can be "no worse than main", and the GitHub Actions
-annotation that lands the reviewer on the offending line. DESIGN.md §6.3's
-55-second demo (edit "within 30 days" to "within 7 days", push, watch CI go red)
-is not recorded, because the gate it demonstrates does not exist.
 
 **Rule extraction and probe generation.** Both are `clauseguard extract` and
 `clauseguard generate` stubs; the 16 rules and 30 probes in the lockfiles were

@@ -425,7 +425,7 @@ judge answers in about 0.9s.
 | Over-promise rate, `aut-strong` | 1–6% | **6.7%** (2/30) | measured, lower bound — see caveat |
 | Under-serve rate | report it | 0 of 6 | measured |
 | Yield by strategy | false-premise, multi-turn dominate | `condition_stripping` dominates | measured, contradicts |
-| Time-to-catch a regression | 30–45s | — | unmeasured; the gate is not built |
+| Time-to-catch a regression | 30–45s | — | unmeasured; the gate is built but no end-to-end CI run has been timed |
 
 Five of eleven measured. That ratio is the honest summary of the project's
 evidence: the mechanism works end to end and produced a real finding against both
