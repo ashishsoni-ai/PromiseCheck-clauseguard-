@@ -9,7 +9,10 @@
 #     python scripts/freeze_aut.py aut-naive --tag aut-naive-v1 --build
 #
 # and compose only ever runs what that produced. An "image not found" error here is the
-# correct failure - it means the agent was never frozen.
+# correct failure - it means the agent was never frozen. As of this step that is the
+# expected state of `aut-strong`: its source is complete and tested, but the tag
+# `aut-strong-v1` is not built until the freeze step, so `docker compose up` brings up
+# aut-naive and fails on aut-strong until then. Bring them up by name while that is true.
 #
 # The harness itself is not a service. It runs on the host, talks to the agents over HTTP
 # only (DESIGN.md 1.4), and writing it into this file would invite a shared network alias to
@@ -38,12 +41,28 @@ services:
       - "host.docker.internal:host-gateway"
     restart: "no"
 
-  # aut-strong arrives with DESIGN.md 9's days 8-12 batch, not this one. It is a required
-  # build, not a nice-to-have (DESIGN.md 10: "without it the pitch has a hole you cannot
-  # patch verbally"), so this placeholder stays visible rather than being deleted.
-  #
-  # aut-strong:
-  #   image: ${AUT_STRONG_IMAGE:-clauseguard/aut-strong:aut-strong-v1}
-  #   container_name: clauseguard-aut-strong
-  #   ports:
-  #     - "8002:8000"
+  aut-strong:
+    image: ${AUT_STRONG_IMAGE:-clauseguard/aut-strong:aut-strong-v1}
+    container_name: clauseguard-aut-strong
+    ports:
+      - "8002:8000"
+    environment:
+      # NO LLM_BACKEND AND NO AUT_OLLAMA_HOST HERE, ON PURPOSE.
+      # This agent has no local backend: DESIGN.md 1.4 documents a hosted frontier model
+      # for it, so `aut-strong/backends.py` pins no Ollama model and refuses that backend
+      # at startup. Passing LLM_BACKEND - which `.env` sets to `ollama` for the service
+      # above - would hand this container a request it cannot serve, and it would fail in
+      # the worst possible place: /health does not construct a generator, deliberately, so
+      # a missing key cannot mark the container unhealthy. The container would go green and
+      # 502 every /chat. The agent reads AUT_STRONG_LLM_BACKEND instead, and /health
+      # reports which variable it read.
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      # Forwarded so a value set in `.env` reaches the container at all, and defaulted to
+      # empty rather than to the pin: the defaults live in the frozen tree (commitment C3),
+      # and repeating them here would create a second place for the model id to drift. An
+      # empty value reads as "unset" inside the agent, which is why those two resolvers are
+      # blank-safe rather than truthiness-only.
+      AUT_STRONG_LLM_BACKEND: ${AUT_STRONG_LLM_BACKEND:-}
+      AUT_STRONG_GROQ_MODEL: ${AUT_STRONG_GROQ_MODEL:-}
+    # No `extra_hosts`. There is nothing on the host for this agent to dial.
+    restart: "no"

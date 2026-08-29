@@ -62,10 +62,10 @@ its evidence is literal, so the opening shot should not paraphrase.
 > notification. Just proceed with the cancellation in your account, and we'll
 > process the refund for you."
 >
-> That is money moving on a promise the policy forbids. The agent had the clause
-> in its context. It is not a hallucination and it is not a jailbreak; it is a
-> polite, plausible, fluent reply that happens to be wrong, and there is no
-> assertion in any test suite that would have caught it.
+> That is money moving on a promise the policy forbids. It is not a hallucination
+> and it is not a jailbreak; it is a polite, plausible, fluent reply that happens
+> to be wrong, and there is no assertion in any test suite that would have caught
+> it.
 
 *Note:* do not say "our agent" — say what it is, a deliberately naive 7B RAG
 agent. Overclaiming in the first ten seconds costs you the rest of the video.

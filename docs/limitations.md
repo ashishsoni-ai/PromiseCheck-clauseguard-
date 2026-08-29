@@ -94,6 +94,11 @@ config line. The overlap is pinned by
 which asserts that this is the *only* family overlap, so a re-pin that moves the
 collision elsewhere fails rather than passing quietly.
 
+**Superseded in part.** That "only family overlap" is scoped to the four roles tabled
+above. `aut-strong`, added afterwards, is a fifth role and a third gpt-oss pin, and the
+test named above does not see it — see the final entry in this file for the two overlaps
+it adds and for the direction each of them biases in.
+
 ## §2 step 11's 45-second target is not met, and the reason is a token quota
 
 We do not claim "under 45 seconds for an incremental run" anywhere, and this entry
@@ -426,6 +431,13 @@ nothing and then, because exhausting these retries abstains rather than raises, 
 harness defect away as judicial humility. That is the failure mode this narrowness exists
 to prevent, and it is pinned by tests in `tests/unit/test_ratelimit.py`.
 
+**What would reduce it.** In order of honesty gained: a 39th field naming the abstention
+cause, which needs the DESIGN.md field list reopened; or a judge model whose
+function-calling does not truncate, which on 2026-08-23's model inventory means leaving the
+gpt-oss family and inheriting the shared-family problem documented at the top of this file;
+or structured-output mode instead of tool calling, which changes what instructor is
+repairing and would need the L2 span contract re-verified end to end.
+
 ## Span grounding asks a weaker question than the authoring script does
 
 **What is now checked.** As of task #47, `harness/execution/grounding.py` verifies that
@@ -467,9 +479,217 @@ scope for this slice, so the gap is recorded rather than closed.
 same deterministic label it always did. What the gap bounds is provenance precision — how
 exactly a reviewer can trace a rule to the clause it encodes — not label correctness.
 
-**What would reduce it.** In order of honesty gained: a 39th field naming the abstention
-cause, which needs the DESIGN.md field list reopened; or a judge model whose
-function-calling does not truncate, which on 2026-08-23's model inventory means leaving the
-gpt-oss family and inheriting the shared-family problem documented at the top of this file;
-or structured-output mode instead of tool calling, which changes what instructor is
-repairing and would need the L2 span contract re-verified end to end.
+## No run can tell a retrieval failure from a reasoning failure
+
+**What is missing.** `aut-naive/app.py` returns `retrieved_chunk_ids` on every reply
+(declared at line 108, populated at line 162), and `grep -rn retrieved_chunk_ids harness/`
+returns nothing at all. DESIGN.md 5.1 fixes 38 audit fields and Step 6 makes a 39th a test
+failure; `audit_rows` in `runs.db` has exactly 38 columns and none of them mentions
+retrieval or chunks. So the trace exists on the wire, for the length of one HTTP response,
+and is then dropped. aut-strong inherits the same shape by the contract documented in
+`aut-strong/app.py` — the field keeps its name and its meaning — so building the second
+agent does not close this.
+
+**What that costs, concretely.** For `run_id 01a032fd` an over-promise has at least two
+mechanisms and the stored row cannot separate them: the governing clause was absent from
+the agent's context, or it was present and the model committed anyway. Those have opposite
+fixes — the first is a retrieval problem, the second a prompting problem — and this is not
+a hypothetical distinction, because it is precisely the distinction DESIGN.md 1.4's
+aut-strong comparison is supposed to illuminate. Any sentence in `docs/results.md` or
+`README.md` of the form "the agent had the clause and ignored it", or "the clause was
+never retrieved", is unsupported by the stored evidence for that run whichever way it
+points. Two such sentences were written and removed on 2026-08-28 for this reason.
+
+**A retrieval miss was observed once, by hand, and not persisted — which is the point.**
+During Step 4's manual `curl` check of aut-naive, one reply's `retrieved_chunk_ids` did not
+include the chunk holding the clause that governed it. That observation lives in a
+development session transcript and in no repository artifact: it is not in `runs.db`, not in
+`docs/`, and `grep` finds it nowhere, so the specific chunk identifiers are deliberately not
+restated here. It is quoted at all only to establish that the mechanism is not imaginary,
+and it is unusable as evidence for anything — one unreproducible hand-run message cannot
+support a mechanism claim about the eleven over-promises in `01a032fd`, and it is not the
+flagship the demo script opens on, which is `P-acme-018-multi_turn_drift-003`.
+
+**What would remove it, and why we are not doing it now.** A 39th column, which reopens the
+DESIGN.md field list; or a sidecar table keyed by `run_id` and `probe_id`, which does not
+touch the 38 fields and is the cheaper route; either way followed by a re-run, because the
+trace cannot be reconstructed after the fact. The decision on 2026-08-28 was to drop the
+mechanism claims rather than spend a live run recovering them, so the limitation is real and
+deliberate rather than an oversight. What is *not* acceptable is keeping the claims and
+citing this entry as a caveat.
+
+## aut-strong's cross-encoder earned nothing measurable on the governing spans
+
+**What was measured.** STEP 2's retrieval configuration was checked inside the frozen image
+before any prompt existed, by `scripts/check_aut_retrieval.py` against evidence the
+container printed itself; the artifact is committed at
+`docs/evidence/aut-strong-retrieval-step2.jsonl`, and re-running `check` on it reproduces
+every number below. Configuration as the container reported it: `chunk_chars` 500,
+`overlap_chars` 300, 22 chunks, `candidate_k` 16, `top_k` 8, embedder
+`BAAI/bge-small-en-v1.5@5c38ec7c`, reranker `BAAI/bge-reranker-base@2cfc18c9`, corpus
+`acme-refunds.md sha256:8deeef5a…` matching `policies/`. Three probes were pre-registered by
+the *shape* of their governing text — an exclusion or a multi-condition carve-out, where
+cosine similarity is weakest — which between them carry ten governing span-instances, six on
+the target rule and four on its ancestors.
+
+| Retrieval reaching the governing span | all spans | target spans |
+|---|---|---|
+| dense top 3 — aut-naive's depth | 6/10 | 4/6 |
+| dense top 8 — aut-strong's depth, cross-encoder off | 8/10 | 5/6 |
+| dense 16 → cross-encoder → top 8 — as shipped | 8/10 | 5/6 |
+
+**The result that matters is the third row equalling the second.** The shipped configuration
+returns exactly the same governing spans as plain dense retrieval at the same depth: the
+cross-encoder promoted none into the returned set and demoted none out of it. Every gain
+over aut-naive on this evidence is the *depth* increase from 3 to 8. This is not "the
+reranker does not work" — it re-selects 2, 1 and 3 of the 8 slots on the three probes
+respectively, so it is plainly doing something — and ordering may still matter to the model
+through position effects, which nothing here measures. The claim it does not support is
+"reranking surfaced the governing clause", and `docs/results.md` must not make it. The
+attribution block that produces these three rows now prints on every run, so a later
+configuration change that makes the reranker load-bearing will show up rather than having to
+be argued.
+
+**Why the effect is bounded by construction anyway.** `candidate_k` is 16 of 22 chunks, which
+makes the bi-encoder close to a pass-through and leaves the cross-encoder only six chunks to
+exclude per query. The six it never sees are recorded per probe in the evidence file. A
+cross-encoder given 73% of the corpus as candidates has little room to distinguish itself
+from the ranker that chose them.
+
+**One target span never entered the candidate set, and the check FAILS on it.**
+`P-acme-008-category_smuggling-001`, rule `refund-hygiene-category-excluded`, second
+condition, span *"Where an item carries no hygiene seal, the category exclusions in section 5
+do not apply to it."* at characters `[1047:1142]`. Two windows hold it whole — chunks 5
+`[789:1287]` and 6 `[987:1485]` — and both sat in the bottom six of 22 by cosine for that
+query, so neither reached the cross-encoder. A reranker cannot promote what it was not given,
+which is why this is a candidate-set failure and not a ranking failure, and why raising
+`top_k` would not fix it either. The span is definitional text in section 2 about
+tamper-evident stickers, 939 characters before the operative section 5 list, while
+the query is lexically about board shorts, a pool, a torn tag and the 30-day window. It is
+query-dependent rather than unreachable: the same span in chunk 5 came back at reranked #8
+from dense #5 for the differently-worded turn in
+`P-acme-008-condition_stripping-003`.
+
+**Why the FAIL was not relabelled, though there is an argument for it.** That condition is
+the escape hatch, not the prohibition — it states when the category exclusion does *not*
+apply — so its absence cannot produce an over-promise on this probe, and if anything makes
+denial easier. That is a true observation about what the failure bears on, and it is
+deliberately not being used to redefine the criterion. The criterion was pre-registered as
+"every governing span reaches the returned set" before the check was run, and splitting it
+into operative-versus-definitional tiers after seeing which tier failed is the thumb on the
+scale DESIGN.md 7.3 names. `CANDIDATE_K`, `TOP_K` and the chunk window were likewise not
+touched.
+
+**How much of the policy each configuration actually sees, since the intuition is
+misleading.** The naive arithmetic — eight chunks of 500 characters against a 4,625-character
+policy — suggests 86% coverage and therefore that retrieval on this corpus tests ordering
+rather than presence. That is wrong, because an overlap of 300 means neighbouring windows
+share three fifths of their text. Measured unique coverage of the returned set is 55%, 51%
+and 53% on the three probes, against 30%, 23% and 19% for aut-naive's dense top 3. Presence
+is a real constraint at this depth, not a formality.
+
+**What the check itself does not ask.** Two scope limits, both known and neither fixed. The
+span chain is ancestors plus the target rule, so nested *exceptions* beneath a target rule
+are never checked — a probe whose escape hatch lives one level below its target would pass
+without that text being retrievable at all. And every condition of a rule is treated as
+equally required, with no distinction between an operative prohibition, a definition and a
+negative carve-out; the FAIL above is exactly the case where that distinction would have
+mattered, which is the honest reason to record it here rather than to act on it mid-measurement.
+
+**What would change the picture.** Widening the check from three probes to all thirty, which
+is measurement rather than tuning and would establish whether one span in ten is typical;
+and, separately, a reranker evaluation that scores ordering rather than membership, since
+membership is the only thing the current check can see and it is the dimension on which the
+cross-encoder happens to be idle here.
+
+## aut-strong is the extractor's own model, and shares the judge's family
+
+DESIGN.md 1.4 puts `aut-strong` on "a frontier API model", and the pin chosen for it is
+`openai/gpt-oss-120b` on Groq. That takes the role table from four roles to five, and from
+one accepted family overlap to three:
+
+| Role | Model | Where | Family |
+|---|---|---|---|
+| aut-naive (agent) | `qwen2.5:7b-instruct` | local, frozen in `aut-naive` | qwen |
+| **aut-strong (agent)** | **`openai/gpt-oss-120b`** | hosted, frozen in `aut-strong` | **gpt-oss** |
+| extractor | `groq/openai/gpt-oss-120b` | hosted | **gpt-oss** |
+| judge | `groq/openai/gpt-oss-20b` | hosted | **gpt-oss** |
+| adversary | `ollama_chat/mistral:7b` | local | mistral |
+
+Of the ten role pairs, three now share a family: extractor/judge, which the first entry in
+this file argues for; aut-strong/judge, which §1.5 forbids for the AUT specifically; and
+aut-strong/extractor, which is not a family overlap at all but **model identity** — the
+same weights behind two roles.
+
+**Why the pin is this anyway.** The candidate inventory in the first entry is the whole
+menu, and it does not contain a frontier-scale model outside gpt-oss. The two alternatives
+were both worse. `qwen/qwen3.6-27b` is aut-naive's own family, and putting both agents in
+one family to protect the judge separation would trade a judging confound for a subject
+confound — the two arms of DESIGN.md 1.4's comparison would differ by prompt and retrieval
+inside one model lineage, which is a narrower experiment than the specification asks for.
+A local model is not available to this agent at all: DESIGN.md 1.4 documents a hosted
+frontier model for `aut-strong`, so `aut-strong/backends.py` pins no local one and refuses
+`AUT_STRONG_LLM_BACKEND=ollama` at startup rather than quietly producing rows that would
+be pooled with the hosted ones.
+
+**The direction of the bias, written down before the run.** Shared pretraining between the
+agent and the judge suppresses *disagreement*, and a detected over-promise is a
+disagreement — the judge has to read the reply as committing to something the policy does
+not allow. Where a clause is ambiguous, an agent and a judge from one lineage tend to find
+the same reading natural, so the over-promises this configuration misses outnumber the ones
+it invents. Over-promises therefore become **harder to detect** here, never easier, and the
+aut-strong over-promise rate this pin produces is a **LOWER BOUND** on the true rate.
+
+That reading is survivable for the thesis DESIGN.md 1.4 actually states — "non-zero here is
+the entire thesis" holds *a fortiori* if a downward-biased measurement still finds
+over-promises. It is fatal for the other branch. A **0%** result on this pin cannot be
+reported as "a well-prompted frontier model does not over-promise", because the model
+grading the replies and the model that wrote the answer key are the agent's own siblings;
+the honest report of 0% here is *inconclusive*, and it needs a fourth-family judge before
+it means anything.
+
+**The comparison is biased in the opposite direction from the absolute number, which is
+the sharper problem.** aut-naive is qwen and shares nothing with the judge, so its
+over-promises are detected at the unsuppressed rate. Only one arm of the comparison is
+judged by a relative. Whatever reduction the table shows from aut-naive to aut-strong is
+therefore an **upper bound on the engineering gain**, inflated by however much the shared
+lineage suppresses detection on the aut-strong side alone. The two bounds point in opposite
+directions and both have to be quoted: aut-strong's own rate is understated, and the
+improvement over aut-naive is overstated. Neither number is safe to quote without the
+other.
+
+**Why the extractor identity is the sharper of the two overlaps, reversing the first
+entry's reasoning.** That entry argues the extractor/judge overlap is the weaker one
+because a shared blind spot would have to route through a rule the extractor mis-extracted
+*and* a response the judge mis-classified in the same direction — two independent errors.
+With the AUT sharing weights with the extractor, they are no longer independent: the rule
+the extractor wrote and the answer the agent gives can have one common cause, because they
+came out of the same weights reading the same clause. C1's label is still computed in
+Python by `evaluate_rules()` from `rules.lock.json`, and the judge still never sees it, so
+the label cannot be argued into agreement — but the *content* of the answer key and the
+content of the reply now share a source.
+
+**What this does not touch.** The mechanical parts of the pipeline are unaffected, and they
+are the parts the commitments rest on: C1's ground-truth label is Python over the lockfile,
+C2's span check is exact substring matching in Python, and the human review of
+`rules.lock.json` still stands between the extractor and every published number. aut-naive's
+own number is clean — qwen, separate from all three hosted roles — so the baseline arm of
+the comparison is not in question here.
+
+**What would remove it.** Two independent routes, and they close different halves. A
+fourth-family frontier hosted judge removes the judging half; the first entry's inventory
+says none is available today, and `allam-2-7b` is the only candidate worth spiking.
+Re-pinning the **extractor** to a non-gpt-oss family removes the identity half, and that is
+the more tractable one: the extractor runs during `clauseguard generate`, which is an
+install step allowed to be slow, so a local model is admissible there. The cost is real
+though — it regenerates `rules.lock.json`, which means a fresh human review and new clause
+hashes in every audit row that cites them.
+
+**Which test pins it.** `tests/unit/test_aut_strong_backends.py::TestTheCollisionsAreDeclaredNotDiscovered`
+asserts both overlaps *exist*, asserts the five-role topology contains exactly these three
+colliding pairs, and asserts this entry says "lower bound". The direction is deliberate: if
+a later re-pin removes an overlap, that test fails, because the pre-commitment recorded here
+would then be wrong — too pessimistic rather than too generous, but wrong — and the numbers
+must not be read against a stale bias argument. `TestTheKnownFamilyCollisionIsTheDocumentedOne`
+in `test_aut_contract.py` still covers the four harness roles only, and is deliberately left
+that way: it is aut-naive's frozen contract and this agent is not part of it.

@@ -38,9 +38,8 @@ The agent's reply, in full:
 > process the refund for you.
 
 That is a refund committed on an order the policy says can only be handled as a
-return, produced by an agent that had the clause in its context. No human wrote
-that probe's answer key: the label came from evaluating the rule's conditions in
-Python before the agent ever ran.
+return. No human wrote that probe's answer key: the label came from evaluating
+the rule's conditions in Python before the agent ever ran.
 
 The honest range is **11–13 of 30**, not 11, because two rows have no verdict —
 the provider rejected its own model's tool call — and both were probes the policy

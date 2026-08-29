@@ -57,6 +57,7 @@ from harness.cli import (
     CliError,
     _mark_span,
     build_parser,
+    cmd_check,
     cmd_run,
     main,
     resolve_policy,
@@ -794,25 +795,32 @@ class TestPolicyResolution:
 # The surface DESIGN.md 1.8 advertises
 # ==========================================================================
 class TestTheUnimplementedSubcommandsRefuseLoudly:
-    """A `check` that exits 0 without checking would read as a pass."""
+    """Unimplemented subcommands (extract, generate) refuse loudly.
+
+    `check` and `report` are implemented and must not appear here.
+    """
 
     @pytest.mark.parametrize(
         "argv",
         [
             ["extract", "--policy", "policies/"],
             ["generate", "--rules", "rules/rules.lock.json"],
-            ["check", "--policy", "policies/", "--agent", "http://a"],
         ],
     )
     def test_they_exit_non_zero(self, argv, capsys):
         assert main(argv) == EXIT_OPERATIONAL
         assert "not implemented" in capsys.readouterr().err
 
-    def test_check_explains_that_the_gate_is_deliberately_absent(self, capsys):
-        main(["check", "--policy", "policies/", "--agent", "http://a"])
-        assert "must not exist as a command that exits 0" in capsys.readouterr().err
+    def test_check_with_no_runs_reports_and_exits_zero(self, tmp_path):
+        """`check` on an empty store prints a message and exits 0, not 1."""
+        store = tmp_path / "runs.db"
+        stream = StringIO()
+        args = build_parser().parse_args(["check", "--store", str(store)])
+        code = cmd_check(args, stream=stream)
+        assert code == EXIT_OK
+        assert "No runs in the audit store" in stream.getvalue()
 
-    def test_all_four_subcommands_are_registered(self):
+    def test_all_five_subcommands_are_registered(self):
         """DESIGN.md 1.8's surface, so `--help` describes the real design."""
         parser = build_parser()
         action = next(
@@ -820,4 +828,6 @@ class TestTheUnimplementedSubcommandsRefuseLoudly:
             for a in parser._actions  # noqa: SLF001 - argparse exposes no public API
             if isinstance(a, argparse._SubParsersAction)
         )
-        assert set(action.choices) == {"extract", "generate", "run", "check"}
+        assert set(action.choices) == {
+            "extract", "generate", "run", "check", "report",
+        }

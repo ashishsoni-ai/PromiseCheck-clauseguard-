@@ -60,6 +60,8 @@ from harness.ingest import MANIFEST_PATH, Clause, PolicyDocument, ingest, load_m
 
 # `harness/judge/__init__.py` is empty, so the judge is imported by module path -
 # the same way harness/execution/runner.py reaches it.
+from harness.gate.check import check_run, resolve_threshold
+from harness.gate.report import write_report, emit_annotations
 from harness.judge.judge import resolve_judge_model, resolve_judge_temp
 
 EXIT_OK: Final = 0
@@ -736,6 +738,57 @@ def cmd_run(
     return EXIT_OK
 
 
+def cmd_check(args: argparse.Namespace, *, stream: TextIO = sys.stdout) -> int:
+    """`clauseguard check` — evaluate a run against a threshold."""
+    store = AuditStore(Path(args.store)).initialise()
+    run_ids = store.run_ids()
+    if not run_ids:
+        print("No runs in the audit store — nothing to gate on.", file=stream)
+        return EXIT_OK
+
+    run_id = args.run_id or run_ids[-1]
+    return check_run(
+        run_id,
+        store,
+        max_over_promise=args.max_overpromise,
+        baseline="--baseline" if args.baseline else None,
+        annotations=args.annotations,
+        stream=stream,
+    )
+
+
+def cmd_report(args: argparse.Namespace, *, stream: TextIO = sys.stdout) -> int:
+    """`clauseguard report` — generate clauseguard-report.md."""
+    store = AuditStore(Path(args.store)).initialise()
+    run_ids = store.run_ids()
+    if not run_ids:
+        print("No runs in the audit store.", file=stream)
+        return EXIT_OPERATIONAL
+
+    run_id = args.run_id or run_ids[-1]
+
+    gate_passed: bool | None = None
+    if args.gate_passed:
+        gate_passed = True
+    elif args.gate_failed:
+        gate_passed = False
+
+    report_path = write_report(
+        run_id,
+        store,
+        output_dir=args.output,
+        gate_passed=gate_passed,
+        threshold=args.threshold,
+    )
+    print(f"Report written to {report_path}", file=stream)
+
+    if args.annotations:
+        rows = store.latest_rows(run_id)
+        emit_annotations(rows, stream=stream)
+
+    return EXIT_OK
+
+
 def cmd_unimplemented(args: argparse.Namespace, *, stream: TextIO = sys.stdout) -> int:
     raise CliError(
         f"`clauseguard {args.command}` is not implemented in this build. "
@@ -854,19 +907,99 @@ def build_parser() -> argparse.ArgumentParser:
     run.set_defaults(func=cmd_run)
 
     check = subparsers.add_parser(
-        "check", help="the gate: exit 0/1 against --max-overpromise (Step 8)"
-    )
-    check.add_argument("--policy", required=True)
-    check.add_argument("--agent", required=True)
-    check.add_argument("--max-overpromise", type=int, default=0)
-    check.set_defaults(
-        func=cmd_unimplemented,
-        reason=(
-            "The gate is DESIGN.md 6 and is deliberately not wired yet: it must "
-            "not exist as a command that exits 0 without having checked "
-            "anything. Use `clauseguard run` to see the numbers."
+        "check",
+        help="the gate: exit 0/1 against --max-overpromise or --baseline",
+        description=(
+            "Evaluates a completed run against an over-promise threshold and "
+            "exits 0 (pass) or 1 (fail). The threshold can be an absolute number "
+            "(--max-overpromise N) or the previous run's count (--baseline). "
+            "Prints the failure table and, in CI, emits GitHub Actions annotations."
         ),
     )
+    check.add_argument(
+        "--run-id",
+        default=None,
+        help="Run ID to evaluate (default: most recent run in the store)",
+    )
+    check.add_argument(
+        "--max-overpromise",
+        type=int,
+        default=None,
+        help="Absolute over-promise threshold (default: 0)",
+    )
+    check.add_argument(
+        "--baseline",
+        action="store_true",
+        default=False,
+        help="Compare against the previous run's over-promise count",
+    )
+    check.add_argument(
+        "--annotations",
+        action="store_true",
+        default=False,
+        help="Emit GitHub Actions workflow command annotations",
+    )
+    check.add_argument(
+        "--store",
+        default="runs.db",
+        help="Path to the audit store (default: runs.db)",
+    )
+    check.add_argument(
+        "--probes",
+        default=str(DEFAULT_PROBES_LOCK),
+        help="Probe lockfile path for annotations (default: %(default)s)",
+    )
+    check.set_defaults(func=cmd_check)
+
+    report = subparsers.add_parser(
+        "report",
+        help="generate clauseguard-report.md from a completed run",
+        description=(
+            "Writes a Markdown report for the run, with the failure table "
+            "and optional gate status. Also emits GitHub Actions annotations "
+            "when --annotations is set."
+        ),
+    )
+    report.add_argument(
+        "--run-id",
+        default=None,
+        help="Run ID to report on (default: most recent run in the store)",
+    )
+    report.add_argument(
+        "--store",
+        default="runs.db",
+        help="Path to the audit store (default: runs.db)",
+    )
+    report.add_argument(
+        "--output",
+        default=".",
+        help="Output directory for the report (default: current directory)",
+    )
+    report.add_argument(
+        "--gate-passed",
+        action="store_true",
+        default=None,
+        help="Mark the gate as passed in the report",
+    )
+    report.add_argument(
+        "--gate-failed",
+        action="store_true",
+        default=None,
+        help="Mark the gate as failed in the report",
+    )
+    report.add_argument(
+        "--threshold",
+        type=int,
+        default=None,
+        help="Gate threshold for the report",
+    )
+    report.add_argument(
+        "--annotations",
+        action="store_true",
+        default=False,
+        help="Emit GitHub Actions annotations to stderr",
+    )
+    report.set_defaults(func=cmd_report)
 
     return parser
 

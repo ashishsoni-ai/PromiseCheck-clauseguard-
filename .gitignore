@@ -34,6 +34,14 @@ aut-naive/.index/
 aut-strong/.index/
 *.faiss
 
+# Scratch files from the retrieval check's three-command sequence
+# (`check_aut_retrieval.py emit --out .tmp-queries.txt`, then the container's stdout).
+# Globbed for the same reason as .commit-msg*: these were untracked AND unignored, so
+# `git add -A` would have committed two dotfiles of scratch. The evidence worth keeping
+# is promoted deliberately to docs/evidence/ instead, and .tmp-queries.txt is not kept
+# at all because `emit` regenerates it from probes.lock.json.
+.tmp-*
+
 # OS
 Thumbs.db
 .DS_Store
