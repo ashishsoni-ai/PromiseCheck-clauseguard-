@@ -437,9 +437,10 @@ class TestOrderSurvivesOutOfOrderCompletion:
     DESIGN.md 5.2 item 3's run-over-run strip is built on.
     """
 
-    def test_the_slowest_probe_is_still_first_if_it_is_first(self, make_probe):
+    def test_rows_come_out_in_probe_order_not_completion_order(self, make_probe):
         probes = [make_probe(f"P-{i:03d}") for i in range(6)]
-        # Descending delays: probe 0 finishes last, probe 5 finishes first.
+        # Descending delays, so probe 0 is asked to finish last and probe 5 first.
+        # Treat that as "roughly reversed" and not as an order: see below.
         delays = {
             f"message for P-{i:03d}": (6 - i) * 0.005 for i in range(6)
         }
@@ -448,10 +449,39 @@ class TestOrderSurvivesOutOfOrderCompletion:
         exchanges = anyio.run(lambda: collect_exchanges(probes, agent, concurrency=6))
 
         assert [ex.probe.probe_id for ex in exchanges] == [p.probe_id for p in probes]
-        # And prove the reordering actually happened, so the assertion above is not
-        # passing because everything ran sequentially anyway.
+
+        # Two guards, so the assertion above cannot pass vacuously. Both are chosen to
+        # hold under any timer, which the assertion they replaced was not.
+        #
+        # (1) The fan-out really happened. `in_flight` is incremented synchronously,
+        #     before the sleep, and the semaphore admits all six, so every increment
+        #     lands in one event-loop pass whatever the clock then does. A serial
+        #     collect_exchanges - the bug this class exists to catch - never exceeds 1.
+        assert agent.peak_in_flight == 6
+        # (2) Completion order was not probe order. P-000 waits 30ms and P-005 5ms, so
+        #     P-000 finishing first would need the timer inverted outright.
         assert agent.messages != [p.turns[0] for p in probes]
-        assert agent.messages[0] == "message for P-005"
+
+        # WHAT USED TO BE HERE, AND WHY IT IS NOT
+        # `assert agent.messages[0] == "message for P-005"`, which additionally required
+        # the 5ms sleep to be distinguishable from the 10ms and 15ms ones. It failed on
+        # 2026-08-28 with P-002 first, on Windows/CPython 3.12.10, in a full-suite run.
+        #
+        # The failure is in the assertion, not in the runner: row order is built by
+        # `results[index] = ...` indexed by `enumerate(probes)`, so it cannot depend on
+        # who answered first, and the assertion above it passed. What the deleted line
+        # actually asserted was that the OS could resolve 5ms increments - and Windows'
+        # default timer granularity is 15.625ms, three times the increment.
+        #
+        # The exact mechanism is NOT established. Two models were written down; one
+        # (tasks straddling a tick boundary while starting, so they read different coarse
+        # values of loop.time()) reproduces P-002-first exactly, the other (each deadline
+        # rounded up to the next tick) predicts this test passing, because asyncio pops
+        # its timer heap in deadline order even when several deadlines land in one tick.
+        # Neither was reproduced - the diagnosis was done on Linux. So the mechanism is
+        # open and the dependence is not: a 5ms margin against a 15.625ms tick is the
+        # defect either way. Do not "fix" a recurrence by widening the sleeps; that buys
+        # a lower flake rate and keeps the wall clock in the assertion.
 
 
 class TestTheSemaphoreCapsAndAlsoParallelises:
