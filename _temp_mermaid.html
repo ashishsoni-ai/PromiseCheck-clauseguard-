@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html><head><script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>body{margin:0;padding:20px;background:white}svg{max-width:100%;height:auto}</style></head>
+<body><div class="mermaid">d
+flowchart LR
+  POL["acme-refunds.md<br/><i>fetched + hashed</i>"] --> ING["harness/ingest<br/>segmenter + hashing"]
+  ING --> MAN[("manifest.json<br/>20 clauses, sha256 each")]
+  MAN -->|policy_version| RULES[("rules.lock.json<br/>16 rules, reviewed")]
+  MAN -->|policy_version| PROBES[("probes.lock.json<br/>30 probes, 8 strategies")]
+
+  EXTRACT["harness/extract<br/>NOT BUILT"] -.-> RULES
+  GEN["harness/probe_gen<br/>NOT BUILT"] -.-> PROBES
+
+  RULES --> EVAL["evaluate_rules()<br/><b>Python, no LLM</b>"]
+  PROBES -->|scenario_facts| EVAL
+  EVAL --> LABEL["expected_policy_stance<br/><b>C1: the answer key</b>"]
+
+  PROBES -->|"probe turns only"| AUT["aut-naive<br/>POST /chat, frozen SHA<br/><b>C3</b>"]
+  ASTRONG["aut-strong<br/>120B, structured retrieval<br/>frozen SHA"]
+
+  AUT -->|agent_response| L0["L0 prefilter<br/>deterministic, no network"]
+  L0 -->|escalate| L1["L1 judge<br/>1 call, temp 0.0<br/>must cite + quote"]
+  L1 --> L2["L2 span verify<br/>exact substring<br/><b>C2</b>"]
+  L2 -->|"over-promise cell"| L3["L3 consistency<br/>k=3, temp 0.3<br/>over-promise cell only<br/>can only lower the count"]
+  LABEL -.->|"escalation decision only<br/>never prompt text"| L3
+
+  L0 -->|"terminates: 10 of 30"| ROW["AuditRow<br/>38 fields"]
+  L2 --> ROW
+  L3 --> ROW
+  ROW --> DB[("runs.db<br/>append-only")]
+  DB --> CLI["clauseguard run<br/><b>OVER-PROMISES: 11 / 30</b>"]
+  DB --> GATE["clauseguard check<br/>exit 0/1, --max-overpromise<br/>--baseline, --annotations"]
+  DB -.-> WEB["harness/web dashboard<br/>NOT BUILT"]
+
+  classDef stub stroke-dasharray: 6 4,color:#777,stroke:#999,fill:#f6f6f6
+  classDef key stroke-width:3px,stroke:#b00,fill:#fff5f5
+  classDef store fill:#eef4ff,stroke:#446
+  class EXTRACT,GEN,WEB stub
+  class LABEL,EVAL key
+  class MAN,RULES,PROBES,DB store</div>
+<script>mermaid.initialize({theme:'default',startOnLoad:true});</script></body></html>

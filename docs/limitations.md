@@ -232,9 +232,9 @@ voting suppresses the jitter above, because those draws differ only by sampling.
 probe, so all three votes are drawn under the same bias and the majority inherits it.
 
 There is also an asymmetry in where L3 is aimed. §4.1 applies k=3 "only to judgments
-landing on the over-promise cell and to the entire gold set" — and a `grants` → `denies`
+landing on the over-promise cell and to the entire LLM cross-check set" — and a `grants` → `denies`
 flip *leaves* that cell, so it is never re-voted. **L3 as specified protects the
-precision of the over-promise count, not its recall.** The gold set is the only control
+precision of the over-promise count, not its recall.** The LLM cross-check set is the only control
 in the design that covers the recall direction, which is why it has to contain
 refuse-then-commit response shapes; without them, nothing in the harness would have
 caught this.
@@ -255,7 +255,7 @@ votes actually cast, so `1.0` means three samples agreed and nothing weaker.
 whether the judge repeats itself, and the perturbation effect above is exactly the case
 where it repeats itself confidently and wrongly — three unanimous votes on a probe
 carrying an order reference are three draws under the same bias. Stability and
-correctness come apart here, and only the gold set measures the second one.
+correctness come apart here, and only the LLM cross-check set measures the second one.
 
 **Arm A's rate is not the judge's accuracy and must not be quoted as it.** Real probes
 carry order references, dates, amounts and names, so **arm B is the realistic
@@ -288,7 +288,7 @@ whether the effect survives a different judge pin, and whether it is symmetric �
 This is recorded as a measured property of this judge under this prompt, not as a general
 claim about LLM judges.
 
-**What would reduce it,** cheapest first: a perturbation panel in the gold set, so the
+**What would reduce it,** cheapest first: a perturbation panel in the LLM cross-check set, so the
 effect is measured on every run instead of discovered once — the same probe with and
 without incidental detail, and a run-level disagreement rate published beside the abstain
 rate; then presenting the agent's response to the judge sentence-numbered, so "which

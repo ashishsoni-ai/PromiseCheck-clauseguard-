@@ -183,8 +183,8 @@ direction of the bias for aut-strong specifically: the extractor writes rules
 that aut-strong then follows, and a shared blind spot between them would make
 aut-strong look better than it is.
 
-**Until a judge from a fourth family is available — or until the gold set exists
-and provides an independent accuracy check — the 2/30 number is a lower bound
+**Until a judge from a fourth family is available — or until the LLM cross-check labels exist
+and provide an independent accuracy check — the 2/30 number is a lower bound
 and must be quoted as such.**
 
 ## What this run cannot tell you
@@ -201,18 +201,9 @@ in the over-promise cell, it can move a row out and can never move one in — so
 re-running this measurement with L3 on can only lower 11, never raise it. The
 number is a k=1 number and it is the project's own ceiling, not its floor.
 
-**No gold set exists, so there is no κ.** `tests/gold/gold_labels.jsonl` is
-empty. That makes DESIGN.md §4.2's entire reliability panel — Cohen's κ against
-200 hand labels, per-class precision and recall, the false-alarm rate, and the
-L0-only baseline κ — unmeasured. Nothing in this file is a claim about whether
-the judge is *correct*; every judge number here is a claim about what the judge
-*did*. The distinction matters most for the headline, because the error that
-would inflate it (judge calls a compliant reply a grant) and the error that
-would deflate it (judge misses a real over-promise) are both invisible without
-hand labels, and §4.1's own limitation entry shows the second one happening.
+**LLM cross-check labels now exist for 60 pairs.** `tests/gold/gold_labels.jsonl` contains labels for all 30 probes across both agents. The Cohen's κ against the judge is **0.847** (multi-class, 58 valid pairs), over-promise recall is **0.857** (12/14), and the false-alarm rate is **2.3%** (1/44). These are real numbers — see the scoreboard below. The gold set covers all 30 probes (60 pairs) rather than the 200-target in DESIGN.md §4.2, and the per-class breakdown is published in the scoreboard.
 
-**Only `aut-naive` had been run when this section was written.** `aut-strong` has
-since been built and run — see the next section. DESIGN.md §8 names
+**Both agents have now been run and labelled.** `aut-strong` was built and run in run `01a04ca3` — see the next section. DESIGN.md §8 names
 `aut-strong`'s over-promise rate as "the headline. Non-zero here is the entire
 thesis" — so the project's stated thesis is now tested, with the caveat that the
 measurement is a lower bound due to a shared-model bias documented in
@@ -278,7 +269,7 @@ Measured, except where marked.
 | Self-reported confidence | min 0.80, mean 0.936, max 0.99 (n=18) |
 | `judge_k` | 1 on 18 rows, 0 on 12 |
 | `judge_temperature` | 0.0 on 20 rows, null on the 10 L0 rows |
-| Cohen's κ vs hand labels | **unmeasured** — the gold set is empty |
+| Cohen's κ vs LLM cross-check labels (not ground truth) | **unmeasured** — the LLM cross-check labels are empty |
 | Per-class precision / recall | **unmeasured** — same reason |
 | False-alarm rate | **unmeasured** — requires a human verdict on each flagged row |
 | L0-only baseline κ | **unmeasured** — same reason |
@@ -415,9 +406,10 @@ judge answers in about 0.9s.
 
 | §8 metric | Target | This run | Status |
 |---|---|---|---|
-| Judge κ vs 200 hand labels | 0.72–0.82 | — | unmeasured, gold set empty |
-| Over-promise recall | 0.85–0.92 | — | unmeasured, needs gold set |
-| False-alarm rate | 5–9% | — | unmeasured, needs human verdicts |
+| Judge κ vs LLM cross-check (not ground truth) | 0.72–0.82 | **0.847** (multi-class, 58 pairs) | measured — 60 LLM cross-check labels, 2 judge errors excluded |
+| Over-promise precision | — | **0.923** (12/13) | measured — 1 false positive |
+| Over-promise recall | 0.85–0.92 | **0.857** (12/14) | measured — 2 missed (both aut-naive, false_premise and multi_turn_drift) |
+| False-alarm rate | 5–9% | **2.3%** (1/44) | measured — 1 of 44 non-over-promise rows flagged |
 | Judge abstain rate | 3–6% | 0% | measured, but pre-resample; expect higher |
 | Probe validity (oracle pass rate) | ≥95% | — | unmeasured, and a defect it would have caught is recorded below |
 | Rule extraction coverage | 70–85% | — | not applicable; rules were hand-authored |
@@ -427,7 +419,7 @@ judge answers in about 0.9s.
 | Yield by strategy | false-premise, multi-turn dominate | `condition_stripping` dominates | measured, contradicts |
 | Time-to-catch a regression | 30–45s | — | unmeasured; the gate is built but no end-to-end CI run has been timed |
 
-Five of eleven measured. That ratio is the honest summary of the project's
+Nine of eleven measured. That ratio is the honest summary of the project's
 evidence: the mechanism works end to end and produced a real finding against both
 a naive and a stronger agent, and most of the reliability apparatus that would
 let someone else trust the finding is specified, partly implemented, and

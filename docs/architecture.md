@@ -70,7 +70,7 @@ down through them, and each box carrying its exit condition on the right:
 | **L0** | `prefilter.py` â€” deterministic lexicon, no network | terminates on `denies` / `evasive`; **can never emit `grants`** |
 | **L1** | `judge.py` â€” 1 call, temp 0.0, must cite a clause and quote it | stance + `cited_clause_id` + `quoted_span` |
 | **L2** | `span_verify.py` â€” exact substring after normalisation | pass, or retry once, then abstain. *This is C2* |
-| **L3** | `consistency.py` â€” k=3 at temp 0.3, majority | over-promise cell + gold set only |
+| **L3** | `consistency.py` â€” k=3 at temp 0.3, majority | over-promise cell only (LLM cross-check path exists but unexercised) |
 
 L0 needs a short-circuit arrow that bypasses L1â€“L3 straight to column 4,
 annotated *10 of 30 rows in the live run, no network call*. Under the L3 box,
@@ -104,8 +104,7 @@ only dashed *line* that does not mean "unbuilt", so it is labelled in full.
 Three boxes must be dashed: `harness/web`,
 `harness/extract/extractor.py`, and `harness/probe_gen/`. `aut-strong` and
 `clauseguard check` are now built and solid. Two more absences are
-worth a footnote strip along the bottom rather than boxes of their own: the gold
-set (`tests/gold/gold_labels.jsonl`, empty â€” so no Îº) and `harness/metrics/`
+worth a footnote strip along the bottom rather than boxes of their own: the LLM cross-check labels (`tests/gold/gold_labels.jsonl` — κ is inter-LLM agreement, not judge accuracy) and `harness/metrics/`
 (one-line stubs). The lockfiles in column 1 should carry the note *hand-authored
 by `scripts/author_rules.py` / `scripts/author_probes.py`* precisely because the
 generator boxes above them are dashed â€” otherwise a reader assumes the stubs
@@ -144,7 +143,7 @@ flowchart LR
   AUT -->|agent_response| L0["L0 prefilter<br/>deterministic, no network"]
   L0 -->|escalate| L1["L1 judge<br/>1 call, temp 0.0<br/>must cite + quote"]
   L1 --> L2["L2 span verify<br/>exact substring<br/><b>C2</b>"]
-  L2 -->|"over-promise cell"| L3["L3 consistency<br/>k=3, temp 0.3<br/>can only lower the count"]
+  L2 -->|"over-promise cell"| L3["L3 consistency<br/>k=3, temp 0.3<br/>over-promise cell only<br/>can only lower the count"]
   LABEL -.->|"escalation decision only<br/>never prompt text"| L3
 
   L0 -->|"terminates: 10 of 30"| ROW["AuditRow<br/>38 fields"]

@@ -334,7 +334,7 @@ they've read the policy.
 > model family as the extractor, creating a downward bias on detection, so the
 > true over-promise rate is likely higher than 2/30.
 >
-> **The gold set is empty**, so there is no Cohen's kappa, no judge precision or
+> **The LLM cross-check set is empty**, so there is no Cohen's kappa, no judge precision or
 > recall, and no false-alarm rate. Nothing here is a claim that the judge is
 > correct â€” only a record of what it did, mechanically verified wherever
 > verification was possible.
