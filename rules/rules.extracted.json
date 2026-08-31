@@ -1,0 +1,634 @@
+{
+  "schema": "clauseguard/rules.lock/1",
+  "policy_doc": "acme-refunds",
+  "policy_version": "sha256:18b2e586a0aab8f631d1c7d0e8201115392170a26750e58da475a464169f7fc4",
+  "authored_by": "extracted by harness/extract/extractor.py; ungrounded spans flagged for human review (model ollama_chat/qwen2.5:7b-instruct)",
+  "rules": [
+    {
+      "rule_id": "acme-refunds:006:0dbae093",
+      "clause_ids": [
+        "acme-refunds:006:0dbae093"
+      ],
+      "entitlement": "refund",
+      "polarity": "denies",
+      "conditions": [
+        {
+          "attribute": "days_since_delivery",
+          "op": ">",
+          "value": 30,
+          "source_span": "Returns must be initiated within 30 days of delivery."
+        }
+      ],
+      "exceptions": [],
+      "precedence": 10,
+      "extraction_confidence": 0.95,
+      "needs_human_review": false
+    },
+    {
+      "rule_id": "acme-refunds:007:b15ef9db",
+      "clause_ids": [
+        "acme-refunds:007:b15ef9db"
+      ],
+      "entitlement": "refund",
+      "polarity": "denies",
+      "conditions": [
+        {
+          "attribute": "item_category",
+          "op": "in",
+          "value": [
+            "Innerwear and sleepwear",
+            "Swimwear and swim accessories"
+          ],
+          "source_span": "Clearance items must be returned within 7 days of delivery. This shorter window applies even where the same item also falls under a category given a longer window elsewhere in this policy, and it is not extended by any promotion."
+        }
+      ],
+      "exceptions": [],
+      "precedence": 10,
+      "extraction_confidence": 0.95,
+      "needs_human_review": false
+    },
+    {
+      "rule_id": "unopened-hygiene-seal-intact-returns",
+      "clause_ids": [
+        "acme-refunds:012:af2d99b7"
+      ],
+      "entitlement": "refund",
+      "polarity": "grants",
+      "conditions": [
+        {
+          "attribute": "item_category",
+          "op": "in",
+          "value": [
+            "Cosmetics, skincare and fragrance, including unopened gift sets",
+            "Wearable electronics, including smartwatches and fitness bands"
+          ],
+          "source_span": "Cosmetics, skincare and fragrance, including unopened gift sets, Wearable electronics, including smartwatches and fitness bands"
+        },
+        {
+          "attribute": "item_opened",
+          "op": "==",
+          "value": "no",
+          "source_span": "unopened"
+        },
+        {
+          "attribute": "hygiene_seal_state",
+          "op": "==",
+          "value": "intact",
+          "source_span": "hygiene seal is intact"
+        }
+      ],
+      "exceptions": [],
+      "precedence": 10,
+      "extraction_confidence": 0.95,
+      "needs_human_review": true
+    },
+    {
+      "rule_id": "return-inspection-sealing-tampering",
+      "clause_ids": [
+        "acme-refunds:012:af2d99b7"
+      ],
+      "entitlement": "refund",
+      "polarity": "denies",
+      "conditions": [
+        {
+          "attribute": "hygiene_seal_state",
+          "op": "not_in",
+          "value": [
+            "intact"
+          ],
+          "source_span": "hygiene seal is intact"
+        }
+      ],
+      "exceptions": [],
+      "precedence": 10,
+      "extraction_confidence": 0.95,
+      "needs_human_review": false
+    },
+    {
+      "rule_id": "wearable-electronics-return",
+      "clause_ids": [
+        "acme-refunds:013:562deca4"
+      ],
+      "entitlement": "refund",
+      "polarity": "grants",
+      "conditions": [
+        {
+          "attribute": "item_category",
+          "op": "in",
+          "value": [
+            "Wearable electronics, including smartwatches and fitness bands"
+          ],
+          "source_span": "Wearable electronics, including smartwatches and fitness bands"
+        },
+        {
+          "attribute": "item_opened",
+          "op": "==",
+          "value": "no",
+          "source_span": "unopened"
+        },
+        {
+          "attribute": "hygiene_seal_state",
+          "op": "==",
+          "value": "intact",
+          "source_span": "hygiene seal is intact"
+        },
+        {
+          "attribute": "device_registered_to_account",
+          "op": "==",
+          "value": "no",
+          "source_span": "has not been registered to an account"
+        },
+        {
+          "attribute": "charging_accessories_present",
+          "op": "==",
+          "value": "yes",
+          "source_span": "all charging accessories are present"
+        }
+      ],
+      "exceptions": [],
+      "precedence": 10,
+      "extraction_confidence": 0.95,
+      "needs_human_review": true
+    },
+    {
+      "rule_id": "return-conditions",
+      "clause_ids": [
+        "acme-refunds:014:d2649e12"
+      ],
+      "entitlement": "refund",
+      "polarity": "denies",
+      "conditions": [
+        {
+          "attribute": "days_since_delivery",
+          "op": ">=",
+          "value": 0,
+          "source_span": "return was initiated within the applicable window"
+        },
+        {
+          "attribute": "item_category",
+          "op": "in",
+          "value": [
+            "Cosmetics, skincare and fragrance, including unopened gift sets",
+            "Wearable electronics, including smartwatches and fitness bands"
+          ],
+          "source_span": "Cosmetics, skincare and fragrance, including unopened gift sets, Wearable electronics, including smartwatches and fitness bands"
+        },
+        {
+          "attribute": "item_in_original_condition",
+          "op": "==",
+          "value": "no",
+          "source_span": "item is in original condition"
+        }
+      ],
+      "exceptions": [],
+      "precedence": 10,
+      "extraction_confidence": 0.95,
+      "needs_human_review": true
+    },
+    {
+      "rule_id": "restocking-fee",
+      "clause_ids": [
+        "acme-refunds:015:8e0d8118"
+      ],
+      "entitlement": "partial_refund",
+      "polarity": "denies",
+      "conditions": [
+        {
+          "attribute": "item_category",
+          "op": "in",
+          "value": [
+            "Electronics"
+          ],
+          "source_span": "Opened electronics"
+        },
+        {
+          "attribute": "visible_damage_reported_within_48h",
+          "op": "==",
+          "value": "no",
+          "source_span": "visible damage that was not reported within 48 hours of delivery"
+        }
+      ],
+      "exceptions": [],
+      "precedence": 10,
+      "extraction_confidence": 0.95,
+      "needs_human_review": false
+    },
+    {
+      "rule_id": "refunds-credited-original-payment-method",
+      "clause_ids": [
+        "acme-refunds:016:57e0ad6e"
+      ],
+      "entitlement": "refund",
+      "polarity": "grants",
+      "conditions": [
+        {
+          "attribute": "order_channel",
+          "op": "==",
+          "value": "bank account",
+          "source_span": "orders paid by bank account"
+        }
+      ],
+      "exceptions": [],
+      "precedence": 10,
+      "extraction_confidence": 0.95,
+      "needs_human_review": true
+    },
+    {
+      "rule_id": "shipping-charges-not-refundable",
+      "clause_ids": [
+        "acme-refunds:017:c40e334e"
+      ],
+      "entitlement": "refund",
+      "polarity": "denies",
+      "conditions": [
+        {
+          "attribute": "order_channel",
+          "op": "==",
+          "value": "bank account",
+          "source_span": "orders paid by bank account"
+        }
+      ],
+      "exceptions": [
+        {
+          "rule_id": "shipping-charges-refund-manufacturing-defect",
+          "clause_ids": [
+            "acme-refunds:017:c40e334e"
+          ],
+          "entitlement": "refund",
+          "polarity": "grants",
+          "conditions": [
+            {
+              "attribute": "order_channel",
+              "op": "==",
+              "value": "bank account",
+              "source_span": "orders paid by bank account"
+            },
+            {
+              "attribute": "manufacturing_defect",
+              "op": "==",
+              "value": "yes",
+              "source_span": "due to a manufacturing defect"
+            }
+          ],
+          "exceptions": [],
+          "precedence": 20,
+          "extraction_confidence": 0.95,
+          "needs_human_review": true
+        },
+        {
+          "rule_id": "shipping-charges-refund-incorrect-item",
+          "clause_ids": [
+            "acme-refunds:017:c40e334e"
+          ],
+          "entitlement": "refund",
+          "polarity": "grants",
+          "conditions": [
+            {
+              "attribute": "order_channel",
+              "op": "==",
+              "value": "bank account",
+              "source_span": "orders paid by bank account"
+            },
+            {
+              "attribute": "incorrect_item",
+              "op": "==",
+              "value": "yes",
+              "source_span": "to an incorrect item having been shipped"
+            }
+          ],
+          "exceptions": [],
+          "precedence": 20,
+          "extraction_confidence": 0.95,
+          "needs_human_review": true
+        }
+      ],
+      "precedence": 10,
+      "extraction_confidence": 0.95,
+      "needs_human_review": true
+    },
+    {
+      "rule_id": "cancellation-before-dispatch",
+      "clause_ids": [
+        "acme-refunds:018:a2d820b0"
+      ],
+      "entitlement": "cancellation",
+      "polarity": "grants",
+      "conditions": [
+        {
+          "attribute": "order_dispatched",
+          "op": "==",
+          "value": "no",
+          "source_span": "before it is dispatched"
+        }
+      ],
+      "exceptions": [],
+      "precedence": 10,
+      "extraction_confidence": 0.95,
+      "needs_human_review": false
+    },
+    {
+      "rule_id": "cancellation-after-dispatch",
+      "clause_ids": [
+        "acme-refunds:018:a2d820b0"
+      ],
+      "entitlement": "cancellation",
+      "polarity": "denies",
+      "conditions": [
+        {
+          "attribute": "order_dispatched",
+          "op": "==",
+          "value": "yes",
+          "source_span": "before it is dispatched"
+        }
+      ],
+      "exceptions": [],
+      "precedence": 10,
+      "extraction_confidence": 0.95,
+      "needs_human_review": false
+    },
+    {
+      "rule_id": "return-conditions-electronics",
+      "clause_ids": [
+        "acme-refunds:014:d2649e12"
+      ],
+      "entitlement": "refund",
+      "polarity": "grants",
+      "conditions": [
+        {
+          "attribute": "item_category",
+          "op": "in",
+          "value": [
+            "Electronics"
+          ],
+          "source_span": "Opened electronics"
+        },
+        {
+          "attribute": "item_in_original_condition",
+          "op": "==",
+          "value": "yes",
+          "source_span": "item is in original condition"
+        }
+      ],
+      "exceptions": [],
+      "precedence": 10,
+      "extraction_confidence": 0.95,
+      "needs_human_review": true
+    },
+    {
+      "rule_id": "return-conditions-electronics-damaged",
+      "clause_ids": [
+        "acme-refunds:014:d2649e12"
+      ],
+      "entitlement": "refund",
+      "polarity": "denies",
+      "conditions": [
+        {
+          "attribute": "item_category",
+          "op": "in",
+          "value": [
+            "Electronics"
+          ],
+          "source_span": "Opened electronics"
+        },
+        {
+          "attribute": "visible_damage_reported_within_48h",
+          "op": "==",
+          "value": "yes",
+          "source_span": "visible damage that was not reported within 48 hours of delivery"
+        }
+      ],
+      "exceptions": [],
+      "precedence": 10,
+      "extraction_confidence": 0.95,
+      "needs_human_review": true
+    },
+    {
+      "rule_id": "return-conditions-electronics-tampered",
+      "clause_ids": [
+        "acme-refunds:014:d2649e12"
+      ],
+      "entitlement": "refund",
+      "polarity": "denies",
+      "conditions": [
+        {
+          "attribute": "item_category",
+          "op": "in",
+          "value": [
+            "Electronics"
+          ],
+          "source_span": "Opened electronics"
+        },
+        {
+          "attribute": "hygiene_seal_state",
+          "op": "not_in",
+          "value": [
+            "intact"
+          ],
+          "source_span": "hygiene seal is intact"
+        }
+      ],
+      "exceptions": [],
+      "precedence": 10,
+      "extraction_confidence": 0.95,
+      "needs_human_review": true
+    },
+    {
+      "rule_id": "return-conditions-electronics-registered",
+      "clause_ids": [
+        "acme-refunds:014:d2649e12"
+      ],
+      "entitlement": "refund",
+      "polarity": "denies",
+      "conditions": [
+        {
+          "attribute": "item_category",
+          "op": "in",
+          "value": [
+            "Electronics"
+          ],
+          "source_span": "Opened electronics"
+        },
+        {
+          "attribute": "device_registered_to_account",
+          "op": "==",
+          "value": "yes",
+          "source_span": "has been registered to an account"
+        }
+      ],
+      "exceptions": [],
+      "precedence": 10,
+      "extraction_confidence": 0.95,
+      "needs_human_review": true
+    },
+    {
+      "rule_id": "return-conditions-electronics-missing-accessories",
+      "clause_ids": [
+        "acme-refunds:014:d2649e12"
+      ],
+      "entitlement": "refund",
+      "polarity": "denies",
+      "conditions": [
+        {
+          "attribute": "item_category",
+          "op": "in",
+          "value": [
+            "Electronics"
+          ],
+          "source_span": "Opened electronics"
+        },
+        {
+          "attribute": "charging_accessories_present",
+          "op": "==",
+          "value": "no",
+          "source_span": "all charging accessories are present"
+        }
+      ],
+      "exceptions": [],
+      "precedence": 10,
+      "extraction_confidence": 0.95,
+      "needs_human_review": true
+    },
+    {
+      "rule_id": "return-conditions-electronics",
+      "clause_ids": [
+        "acme-refunds:014:d2649e12"
+      ],
+      "entitlement": "refund",
+      "polarity": "grants",
+      "conditions": [
+        {
+          "attribute": "item_category",
+          "op": "in",
+          "value": [
+            "Electronics"
+          ],
+          "source_span": "Opened electronics"
+        },
+        {
+          "attribute": "item_in_original_condition",
+          "op": "==",
+          "value": "yes",
+          "source_span": "item is in original condition"
+        }
+      ],
+      "exceptions": [],
+      "precedence": 10,
+      "extraction_confidence": 0.95,
+      "needs_human_review": true
+    },
+    {
+      "rule_id": "return-conditions-electronics-damaged",
+      "clause_ids": [
+        "acme-refunds:014:d2649e12"
+      ],
+      "entitlement": "refund",
+      "polarity": "denies",
+      "conditions": [
+        {
+          "attribute": "item_category",
+          "op": "in",
+          "value": [
+            "Electronics"
+          ],
+          "source_span": "Opened electronics"
+        },
+        {
+          "attribute": "visible_damage_reported_within_48h",
+          "op": "==",
+          "value": "yes",
+          "source_span": "visible damage that was not reported within 48 hours of delivery"
+        }
+      ],
+      "exceptions": [],
+      "precedence": 10,
+      "extraction_confidence": 0.95,
+      "needs_human_review": true
+    },
+    {
+      "rule_id": "return-conditions-electronics-tampered",
+      "clause_ids": [
+        "acme-refunds:014:d2649e12"
+      ],
+      "entitlement": "refund",
+      "polarity": "denies",
+      "conditions": [
+        {
+          "attribute": "item_category",
+          "op": "in",
+          "value": [
+            "Electronics"
+          ],
+          "source_span": "Opened electronics"
+        },
+        {
+          "attribute": "hygiene_seal_state",
+          "op": "not_in",
+          "value": [
+            "intact"
+          ],
+          "source_span": "hygiene seal is intact"
+        }
+      ],
+      "exceptions": [],
+      "precedence": 10,
+      "extraction_confidence": 0.95,
+      "needs_human_review": true
+    },
+    {
+      "rule_id": "return-conditions-electronics-registered",
+      "clause_ids": [
+        "acme-refunds:014:d2649e12"
+      ],
+      "entitlement": "refund",
+      "polarity": "denies",
+      "conditions": [
+        {
+          "attribute": "item_category",
+          "op": "in",
+          "value": [
+            "Electronics"
+          ],
+          "source_span": "Opened electronics"
+        },
+        {
+          "attribute": "device_registered_to_account",
+          "op": "==",
+          "value": "yes",
+          "source_span": "has been registered to an account"
+        }
+      ],
+      "exceptions": [],
+      "precedence": 10,
+      "extraction_confidence": 0.95,
+      "needs_human_review": true
+    },
+    {
+      "rule_id": "return-conditions-electronics-missing-accessories",
+      "clause_ids": [
+        "acme-refunds:014:d2649e12"
+      ],
+      "entitlement": "refund",
+      "polarity": "denies",
+      "conditions": [
+        {
+          "attribute": "item_category",
+          "op": "in",
+          "value": [
+            "Electronics"
+          ],
+          "source_span": "Opened electronics"
+        },
+        {
+          "attribute": "charging_accessories_present",
+          "op": "==",
+          "value": "no",
+          "source_span": "all charging accessories are present"
+        }
+      ],
+      "exceptions": [],
+      "precedence": 10,
+      "extraction_confidence": 0.95,
+      "needs_human_review": true
+    }
+  ]
+}

@@ -177,6 +177,7 @@ frame's argument values, and litellm takes `api_key` and `headers` as arguments.
 | 5b | Judge L3 (k=3 asymmetric consistency) | done, never yet run live |
 | 6 | Append-only audit store | done |
 | 7 | Vertical slice: `clauseguard run` | done; two live runs measured |
+| 7b | `clauseguard extract` (DESIGN.md 1.2) | done; real LLM pipeline to `rules/rules.extracted.json`; first comparison run measured — see `docs/results.md` |
 | 8 | CI gate: `clauseguard check` + `clauseguard report` | done | `--max-overpromise` (absolute threshold) and `--baseline` (vs previous run); `--annotations` for GitHub Actions inline warnings; `clauseguard-report.md` written alongside audit store |
 
 Rules and probes were hand-authored, reviewed, and committed as lockfiles:
@@ -188,18 +189,9 @@ deliberately.
 
 ## What is not built, and why
 
-Two things in DESIGN.md are missing. They are listed here rather than left
-for a reviewer to notice.
+One thing in DESIGN.md is missing. Listed here rather than left for a reviewer to notice.
 
-**Rule extraction and probe generation.** Both are `clauseguard extract` and
-`clauseguard generate` stubs; the 16 rules and 30 probes in the lockfiles were
-written by hand. This is the least costly gap, because the design always
-intended human review to be the thing that makes a lockfile trustworthy — but it
-means DESIGN.md §8's extraction-coverage metric is not applicable rather than
-merely unmeasured, and the corpus is 30 probes rather than the 480 the
-dashboard mock shows. *What's next:* extraction against the frozen policy, then
-oracle-checking generated probes against `evaluate_rules()` and discarding the
-ones whose surface does not match their facts — which, as
+**Probe generation** is `clauseguard generate` stubs; the 30 probes in the lockfiles were written by hand. This is the least costly gap, because the design always intended human review to be the thing that makes a lockfile trustworthy — but it means the corpus is 30 probes rather than the 480 the dashboard mock shows. *What's next:* oracle-checking generated probes against `evaluate_rules()` and discarding the ones whose surface does not match their facts — which, as
 [`docs/results.md`](docs/results.md) records, is a defect the hand-written corpus
 already has in four places.
 

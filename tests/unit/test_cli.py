@@ -795,15 +795,14 @@ class TestPolicyResolution:
 # The surface DESIGN.md 1.8 advertises
 # ==========================================================================
 class TestTheUnimplementedSubcommandsRefuseLoudly:
-    """Unimplemented subcommands (extract, generate) refuse loudly.
+    """Unimplemented subcommands (generate) refuse loudly.
 
-    `check` and `report` are implemented and must not appear here.
+    `check`, `report` and `extract` are implemented and must not appear here.
     """
 
     @pytest.mark.parametrize(
         "argv",
         [
-            ["extract", "--policy", "policies/"],
             ["generate", "--rules", "rules/rules.lock.json"],
         ],
     )

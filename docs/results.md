@@ -518,5 +518,67 @@ SELECT probe_id, strategy, difficulty_tier, cited_clause_id,
        quoted_span, response_span, span_verified, judge_confidence
 FROM audit_rows WHERE verdict_class = 'OVER_PROMISE' ORDER BY probe_id;
 ```
-dict_class = 'OVER_PROMISE' ORDER BY probe_id;
-```
+
+## Extraction: the pipeline is real, and the first comparison run is honest
+
+`harness/extract/` is now built and tested — not a stub. `extractor.py` makes a
+real LLM call (litellm, temperature 0.0, the model pinned by
+`CLAUSEGUARD_EXTRACTOR_MODEL`), `prompts.py` carries the heading-path breadcrumb
+constraint, `compare.py` scores extracted rules against the hand-authored set,
+`scripts/extract_and_compare.py` runs the measurement, and `tests/unit/test_extractor.py`
+covers the retry-then-flag grounding control offline. `clauseguard extract` is a
+real subcommand. The pipeline writes to `rules/rules.extracted.json` and never
+touches `rules.lock.json`.
+
+**One-off comparison run — local model, not the pinned extractor.** The pinned
+extractor is `groq/openai/gpt-oss-120b`, but the Groq free-tier daily token budget
+(200,000 TPD) was exhausted before this comparison ran, so the first validated
+measurement used the local `qwen2.5:7b-instruct` via Ollama instead. This is a
+deliberate one-off, reported so it is never mistaken for the canonical
+extraction config. It is also exactly the deployment `docs/limitations.md`
+anticipates: "a local model is admissible there" for the extractor, because
+`generate`/extract is an install-time step, not a live judged run.
+
+| Metric | Value |
+|---|---|
+| Model | `ollama_chat/qwen2.5:7b-instruct` (local, temp 0.0) — **not** the pinned `gpt-oss-120b` |
+| Clauses covered | 9 / 20 (**45.0%**) |
+| DESIGN.md §8 band | **below_target** (target 70–85%, aspirational 90%) |
+| Extracted rules | 21 roots, 18 grounding |
+| vs hand-authored (16 incl. exceptions) | **2 equivalent · 11 different · 6 missed** |
+| Rules invented (no hand counterpart) | **1** |
+
+**What this run proves, stated plainly.**
+
+*The prompt fixes worked.* The three prompt revisions — do-not-label-`waiver`,
+preserve nested exception trees, and do-not-invent-from-definition/scope text —
+moved the measured outcome in the expected direction. On the earlier captured
+run, the extractor invented ~20 definition/scope "waiver" rules; on this run it
+invented **1**, and there is no `waiver` mislabeling anywhere in the output. The
+definitional clauses in section 2 produced no standalone rules. That is evidence
+that the negative guidance is doing its job, not a coincidence.
+
+*The remaining gaps are model capability, not prompt quality.* The local 7B model
+emits `return`/`exchange` as entitlement labels (normalised to `refund`/
+`replacement` at sanitise time — the same mapping the hand-authored set already
+uses), occasionally uses a clause ID as a `rule_id`, and flattens the hygiene
+exception tree into top-level rules, which is why the 11 "different" rows include
+the `refund-hygiene-*` carve-outs that the hand-authored set models as nested
+exceptions. At 45% clause coverage on a 20-clause policy, this is a weak extractor
+by the design's own standard. Reporting it as evidence rather than excusing it is
+the point: it is the empirical case for the human-review step below.
+
+**`rules.lock.json` remains the source of truth.** Every published number in this
+project — the over-promise counts, the matrix, the κ against gold labels — is
+derived from the hand-authored, human-reviewed rule set. This extraction run is a
+validation exercise that shows why that human review matters: an unsupervised
+LLM extractor, even a local one, does not yet produce a rule set worth publishing.
+The pipeline is built so the day an extractor *does* clear the bar, the comparison
+(`compare.py`) will show it; until then the reviewed lockfile stands.
+
+**Open comparison — the pinned Groq extractor was not tested tonight.** The
+`groq/openai/gpt-oss-120b` extractor could not be run because the account's
+free-tier TPD budget was exhausted (200,000/day). That comparison — how the same
+revised prompt performs on the strong model the design actually pins — is
+recorded here as unfinished work, not as a result. The local run above is a
+lower-bound sanity check, not a substitute.

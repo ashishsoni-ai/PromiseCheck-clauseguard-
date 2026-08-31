@@ -58,6 +58,15 @@ from harness.execution import (
 )
 from harness.ingest import MANIFEST_PATH, Clause, PolicyDocument, ingest, load_manifest
 
+from harness.extract.coverage import compute_coverage
+from harness.extract.extractor import (
+    DEFAULT_EXTRACTOR_MODEL,
+    LitellmExtractorClient,
+    extract_rules,
+    resolve_extractor_model,
+    resolve_extractor_temp,
+)
+
 # `harness/judge/__init__.py` is empty, so the judge is imported by module path -
 # the same way harness/execution/runner.py reaches it.
 from harness.gate.check import check_run, resolve_threshold
@@ -789,6 +798,59 @@ def cmd_report(args: argparse.Namespace, *, stream: TextIO = sys.stdout) -> int:
     return EXIT_OK
 
 
+def cmd_extract(args: argparse.Namespace, *, stream: TextIO = sys.stdout) -> int:
+    """Extract candidate rules from a policy document (DESIGN.md 1.2)."""
+    from pathlib import Path
+
+    policy = ingest(args.policy, corpus_role="worked_example")
+    print(f"policy      : {policy.doc_slug}  {policy.policy_version}", file=stream)
+    print(f"clauses     : {len(policy.clauses)}", file=stream)
+
+    model = args.model or resolve_extractor_model()
+    warm = os.getenv("EXTRACTOR_WARM_MODEL", "")
+    if warm:
+        model = warm
+
+    kw = dict(model=model)
+    if args.timeout:
+        kw["timeout_s"] = args.timeout
+    if args.max_tokens:
+        kw["max_tokens"] = args.max_tokens
+    client = LitellmExtractorClient(**kw)
+
+    print(f"extractor   : {client.model}  (temperature {resolve_extractor_temp()})", file=stream)
+    if client.model != DEFAULT_EXTRACTOR_MODEL:
+        print(
+            f"  NOTE      : one-off comparison run — not the pinned "
+            f"{DEFAULT_EXTRACTOR_MODEL}",
+            file=stream,
+        )
+    print("extracting  : this may take a minute...", file=stream)
+
+    rules = extract_rules(policy, client=client)
+    out = Path(args.out) if args.out else Path("rules/rules.extracted.json")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    import json
+    payload = {
+        "schema": "clauseguard/rules.lock/1",
+        "policy_doc": policy.doc_slug,
+        "policy_version": policy.policy_version,
+        "authored_by": f"extracted by harness/extract/extractor.py (model {client.model})",
+        "rules": [r.model_dump(mode="json") for r in rules],
+    }
+    out.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8", newline="\n",
+    )
+    print(f"written     : {out}  ({len(rules)} root rule(s))", file=stream)
+
+    coverage = compute_coverage(policy, rules)
+    print(coverage.summary(), file=stream)
+    print(f"  DESIGN.md 8 band    : {coverage.band}", file=stream)
+    print(f"  rules.lock.json     : NOT touched (hand-authored, reviewed)", file=stream)
+    return EXIT_OK
+
+
 def cmd_unimplemented(args: argparse.Namespace, *, stream: TextIO = sys.stdout) -> int:
     raise CliError(
         f"`clauseguard {args.command}` is not implemented in this build. "
@@ -811,13 +873,14 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     extract = subparsers.add_parser(
-        "extract", help="policy document -> candidate rules (Step 8)"
+        "extract", help="policy document -> candidate rules (DESIGN.md 1.2)"
     )
-    extract.add_argument("--policy", required=True)
-    extract.set_defaults(
-        func=cmd_unimplemented,
-        reason="Rule extraction is DESIGN.md 2 steps 3-4.",
-    )
+    extract.add_argument("--policy", required=True, help="Path to policy markdown file")
+    extract.add_argument("--out", default=None, help="Output path (default: rules/rules.extracted.json)")
+    extract.add_argument("--model", default=None, help="Override the extractor model (env: CLAUSEGUARD_EXTRACTOR_MODEL)")
+    extract.add_argument("--timeout", type=int, default=None, help="Per-call timeout in seconds")
+    extract.add_argument("--max-tokens", type=int, default=None, help="Output token cap per call")
+    extract.set_defaults(func=cmd_extract)
 
     generate = subparsers.add_parser(
         "generate", help="rules -> probe set (Step 8)"
