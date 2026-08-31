@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -1323,13 +1323,24 @@ t disagreement about a number like this is really disagreement about its denomin
       </article>
 
       <article class="cg-card">
-        <div class="cg-card__tag">gap 2 · no κ</div>
-        <h3 class="cg-card__h">No LLM cross-check set, so no κ.</h3>
-        <p class="cg-card__p"><code>tests/gold/gold_labels.jsonl</code> is empty, which makes DESIGN.md
-        §4.2's entire reliability panel unmeasured — Cohen's κ against 200 LLM cross-check labels, per-class
-        precision and recall, the false-alarm rate, the L0-only baseline. <strong>Nothing here is a claim
-        about whether the judge is <em>correct</em>; every judge number is a claim about what the judge
-        <em>did</em>.</strong></p>
+        <div class="cg-card__tag">gap 2 · κ measured</div>
+        <h3 class="cg-card__h">Gold-set κ: 0.612 — substantial, not excellent.</h3>
+        <p class="cg-card__p">60 hand-labeled rows (30 probes × 2 agents) in
+        <code>tests/gold/gold_labels.jsonl</code> now ground DESIGN.md §4.2's reliability panel.
+        <strong>Cohen's κ (multi-class, pooled): 0.612.</strong>
+        Per-agent: aut-naive 0.638, aut-strong 0.463.
+        Binary κ (over-promise vs rest): pooled 0.593, aut-naive 0.654,
+        aut-strong 0.211 — <strong>unstable: only 2–5 over-promise events in 30 rows.</strong></p>
+        <p class="cg-card__p" style="margin-top:.7rem">
+        Over-promise precision: pooled 0.923 (12/13), aut-naive 1.000 (11/11), aut-strong 0.500 (1/2).
+        Recall: pooled 0.571 (12/21), aut-naive 0.688 (11/16), aut-strong 0.200 (1/5).
+        False-alarm rate: pooled 2.7% (1/37), aut-naive 0%, aut-strong 4.0%.</p>
+        <p class="cg-card__p" style="margin-top:.7rem">
+        <strong>The judge under-detects.</strong> Human labels found more over-promises than the
+        judge's live run: aut-naive 18/30 (human) vs 11/30 (judge), aut-strong 5/30 vs 2/30.
+        The old κ of 0.847, computed against LLM-generated "cross-check" labels, was
+        <strong>circular and inflated</strong> — the labeling LLM and the judge shared a model family.
+        0.612 against genuine human labels is the real number.</p>
       </article>
 
       <article class="cg-card">
@@ -1358,12 +1369,12 @@ t disagreement about a number like this is really disagreement about its denomin
 <section class="cg-sec" aria-labelledby="s8">
   <div class="cg-wrap cg-wrap--wide">
     <div class="cg-eyebrow">
-      <span class="cg-chip cg-chip--measured">4 of 11 measured</span>
+      <span class="cg-chip cg-chip--measured">7 of 11 measured</span>
       <span>Against DESIGN.md §8's scoreboard</span>
       <span class="cg-eyebrow__rule" aria-hidden="true"></span>
     </div>
 
-    <h2 class="cg-h2" id="s8">Four of eleven measured. That ratio is the honest summary.</h2>
+    <h2 class="cg-h2" id="s8">Seven of eleven measured. That ratio is the honest summary.</h2>
     <p class="cg-lede">The mechanism works end to end and produced a real finding, and most of the
       reliability apparatus that would let someone else trust the finding is specified, partly
       implemented, and unmeasured.</p>
@@ -1379,23 +1390,23 @@ t disagreement about a number like this is really disagreement about its denomin
           </tr>
         </thead>
         <tbody>
-          <tr class="is-unmeasured">
-            <td class="cg-score__metric">Judge κ vs 200 hand labels</td>
+          <tr class="is-measured">
+            <td class="cg-score__metric">Judge κ vs 60 human gold labels</td>
             <td>0.72–0.82</td>
-            <td class="cg-score__dash">—</td>
-            <td class="cg-score__status">unmeasured, gold set empty</td>
+            <td class="cg-score__val">0.612</td>
+            <td class="cg-score__status">measured, below band; old 0.847 was circular (LLM-vs-LLM)</td>
           </tr>
-          <tr class="is-unmeasured">
-            <td class="cg-score__metric">Over-promise recall</td>
+          <tr class="is-measured">
+            <td class="cg-score__metric">Over-promise recall (vs human gold)</td>
             <td>0.85–0.92</td>
-            <td class="cg-score__dash">—</td>
-            <td class="cg-score__status">unmeasured, needs LLM cross-check set</td>
+            <td class="cg-score__val">0.571 (12/21)</td>
+            <td class="cg-score__status">measured, well below target — judge under-detects</td>
           </tr>
-          <tr class="is-unmeasured">
-            <td class="cg-score__metric">False-alarm rate</td>
+          <tr class="is-measured">
+            <td class="cg-score__metric">False-alarm rate (vs human gold)</td>
             <td>5–9%</td>
-            <td class="cg-score__dash">—</td>
-            <td class="cg-score__status">unmeasured, needs human verdicts</td>
+            <td class="cg-score__val">2.7% (1/37)</td>
+            <td class="cg-score__status">measured, below band — low false alarms, but also low recall</td>
           </tr>
           <tr class="is-measured">
             <td class="cg-score__metric">Judge abstain rate</td>

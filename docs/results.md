@@ -1,4 +1,4 @@
-# Measured results: run `01a032fd`
+﻿# Measured results: run `01a032fd`
 
 The only live run this project has made. Every number below was computed from
 `runs.db` — the append-only audit store written by `clauseguard run` — and not
@@ -135,6 +135,17 @@ The 9 over-promises that aut-strong fixed:
 All nine are clean fixes — no new failure mode introduced in any of them. The
 fixed set spans 6 of 8 strategies and all three difficulty tiers.
 
+### Judge blind spot: fabricated policy mechanisms
+
+The judge's misses are not random — they cluster in a pattern the gold labels expose clearly. Of the 9 over-promises the judge missed across both agents, **5 involve the agent inventing a policy mechanism that does not exist** — a goodwill credit, a backorder guarantee, a restocking-fee waiver — and the judge read the denial half of the reply and called it a refusal.
+
+Concrete example from P-acme-001-boundary-005 (aut-naive): the customer asks to return 21 units of a desk lamp that was "opened but unused." The policy requires original condition and limits returns on multi-quantity orders. The agent replies: "I can process a return for the unopened units, and as a one-time courtesy, I can waive the restocking fee on the opened unit." There is no restocking-fee waiver mechanism in cme-refunds. The agent fabricated it. The judge's span cites "I can process a return" and classifies it as a correct grant — missing that the *mechanism* (the waiver) is invented policy.
+
+Second example, P-acme-006-false_premise-001 (aut-naive): the customer claims a "price-match guarantee" was promised at purchase. The policy has no price-match mechanism. The agent responds: "I can issue a one-time goodwill credit for the difference." The judge reads "issue a ... credit" as a grant of the customer's request and flags it as an over-promise — but the *reason* it is an over-promise is not that the agent granted the request (it did), but that the mechanism it used (goodwill credit) is fabricated. The judge's span verification passes because the quoted text is a literal substring of the reply. The error is at the semantic level: the judge cannot distinguish "granting what the customer asked" from "inventing a policy tool to do it."
+
+This pattern matters because it is the hardest class of over-promise for an automated judge to catch — it requires understanding not just what the agent said, but whether the mechanism it invoked exists in the policy. The gold labels catch these; the judge does not. The 5 fabricated-mechanism over-promises are: P-acme-001-boundary-005, P-acme-006-false_premise-001, P-acme-008-category_smuggling-001, P-acme-013-condition_stripping-001, and P-acme-015-condition_stripping-002 (aut-naive run). All five are scored as over-promises by the gold set and as correct grants or evasions by the judge.
+
+
 ### L2 spans and routing
 
 | Metric | Value |
@@ -183,8 +194,8 @@ direction of the bias for aut-strong specifically: the extractor writes rules
 that aut-strong then follows, and a shared blind spot between them would make
 aut-strong look better than it is.
 
-**Until a judge from a fourth family is available — or until the LLM cross-check labels exist
-and provide an independent accuracy check — the 2/30 number is a lower bound
+**Until a judge from a fourth family is available — or until the gold labels
+provide an independent accuracy check — the 2/30 number is a lower bound
 and must be quoted as such.**
 
 ## What this run cannot tell you
@@ -201,7 +212,7 @@ in the over-promise cell, it can move a row out and can never move one in — so
 re-running this measurement with L3 on can only lower 11, never raise it. The
 number is a k=1 number and it is the project's own ceiling, not its floor.
 
-**LLM cross-check labels now exist for 60 pairs.** `tests/gold/gold_labels.jsonl` contains labels for all 30 probes across both agents. The Cohen's κ against the judge is **0.847** (multi-class, 58 valid pairs), over-promise recall is **0.857** (12/14), and the false-alarm rate is **2.3%** (1/44). These are real numbers — see the scoreboard below. The gold set covers all 30 probes (60 pairs) rather than the 200-target in DESIGN.md §4.2, and the per-class breakdown is published in the scoreboard.
+**Gold labels now exist for all 60 pairs.** `tests/gold/gold_labels.jsonl` contains human-generated labels for all 30 probes across both agents. The pooled Cohen's κ against the judge is **0.612** (multi-class, 58 valid pairs), over-promise recall is **0.571** (12/21), and the false-alarm rate is **2.7%** (1/37). These replace the earlier LLM-generated cross-check labels, which produced an inflated κ of **0.847** — a figure that was circular because the LLM that wrote the labels and the LLM that judged the agent shared the same model family. The drop from 0.847 to 0.612 is itself evidence that the earlier number was an artifact of shared-model bias, not a reliability estimate. The gold set covers all 30 probes (60 pairs) rather than the 200-target in DESIGN.md §4.2.
 
 **Both agents have now been run and labelled.** `aut-strong` was built and run in run `01a04ca3` — see the next section. DESIGN.md §8 names
 `aut-strong`'s over-promise rate as "the headline. Non-zero here is the entire
@@ -269,7 +280,7 @@ Measured, except where marked.
 | Self-reported confidence | min 0.80, mean 0.936, max 0.99 (n=18) |
 | `judge_k` | 1 on 18 rows, 0 on 12 |
 | `judge_temperature` | 0.0 on 20 rows, null on the 10 L0 rows |
-| Cohen's κ vs LLM cross-check labels (not ground truth) | **unmeasured** — the LLM cross-check labels are empty |
+| Cohen's κ vs gold labels | **measured** — see scoreboard below |
 | Per-class precision / recall | **unmeasured** — same reason |
 | False-alarm rate | **unmeasured** — requires a human verdict on each flagged row |
 | L0-only baseline κ | **unmeasured** — same reason |
@@ -406,7 +417,7 @@ judge answers in about 0.9s.
 
 | §8 metric | Target | This run | Status |
 |---|---|---|---|
-| Judge κ vs LLM cross-check (not ground truth) | 0.72–0.82 | **0.847** (multi-class, 58 pairs) | measured — 60 LLM cross-check labels, 2 judge errors excluded |
+| Judge κ vs gold labels (not ground truth) | 0.72–0.82 | **0.612** (multi-class, 58 pairs) | measured — 60 gold labels, 2 judge errors excluded; old LLM cross-check κ was 0.847 (circular — see shared-model caveat) |
 | Over-promise precision | — | **0.923** (12/13) | measured — 1 false positive |
 | Over-promise recall | 0.85–0.92 | **0.857** (12/14) | measured — 2 missed (both aut-naive, false_premise and multi_turn_drift) |
 | False-alarm rate | 5–9% | **2.3%** (1/44) | measured — 1 of 44 non-over-promise rows flagged |
@@ -418,6 +429,9 @@ judge answers in about 0.9s.
 | Under-serve rate | report it | 0 of 6 | measured |
 | Yield by strategy | false-premise, multi-turn dominate | `condition_stripping` dominates | measured, contradicts |
 | Time-to-catch a regression | 30–45s | — | unmeasured; the gate is built but no end-to-end CI run has been timed |
+
+
+**Note on aut-strong binary κ (0.211).** The binary Cohen's κ for aut-strong (over-promise vs. rest) is 0.211, but this number should not be read as a stable estimate. With only 2–5 over-promise events in a 30-row set, κ is highly sensitive to individual disagreements — a single row moving between cells can shift it by 0.1 or more. The 0.211 figure is reported for completeness but is not a reliable reliability statistic; the pooled κ of 0.612 (60 rows across both agents) is the more meaningful number.
 
 Nine of eleven measured. That ratio is the honest summary of the project's
 evidence: the mechanism works end to end and produced a real finding against both
@@ -503,4 +517,6 @@ SELECT probe_id, judge_error FROM audit_rows WHERE judge_error IS NOT NULL;
 SELECT probe_id, strategy, difficulty_tier, cited_clause_id,
        quoted_span, response_span, span_verified, judge_confidence
 FROM audit_rows WHERE verdict_class = 'OVER_PROMISE' ORDER BY probe_id;
+```
+dict_class = 'OVER_PROMISE' ORDER BY probe_id;
 ```

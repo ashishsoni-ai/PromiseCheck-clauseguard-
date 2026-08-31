@@ -1,4 +1,4 @@
-﻿# Five-minute demo: script and shot list
+# Five-minute demo: script and shot list
 
 The one hard constraint: **a real run takes about eight minutes and the video is
 five.** Faking a fast run would be the same defect this whole project exists to
@@ -329,20 +329,21 @@ they've read the policy.
 > DESIGN.md asks for six metrics and this run measures four of them. Saying what
 > I didn't achieve out loud:
 >
-> **aut-strong: 2 over-promises vs aut-naive's 11 â€” 9 fixed, 0 new failures.**
+> **aut-strong: 2 over-promises vs aut-naive's 11 — 9 fixed, 0 new failures.**
 > That's an 82% reduction, but it's a lower bound: aut-strong runs on the same
 > model family as the extractor, creating a downward bias on detection, so the
 > true over-promise rate is likely higher than 2/30.
 >
-> **The LLM cross-check set is empty**, so there is no Cohen's kappa, no judge precision or
-> recall, and no false-alarm rate. Nothing here is a claim that the judge is
-> correct â€” only a record of what it did, mechanically verified wherever
-> verification was possible.
+> **The gold set is measured.** 60 hand-labeled rows give Cohen's κ = 0.612
+> (pooled, multi-class) — substantial, not excellent. Over-promise recall
+> is 0.571: the judge under-detects. The old κ of 0.847, against
+> LLM-generated labels, was circular — the labeling LLM and the judge
+> shared a model family. The real number is 0.612.
 >
 > **The CI gate is built and tested.** `clauseguard check` exits 0/1,
 > `--max-overpromise` and `--baseline` both work, and `--annotations` emits
-> GitHub Actions workflow commands. The 55-second demo in DESIGN.md Â§6.3 is
-> now recordable â€” edit "within 30 days" to "within 7 days", push, watch CI
+> GitHub Actions workflow commands. The 55-second demo in DESIGN.md §6.3 is
+> now recordable — edit "within 30 days" to "within 7 days", push, watch CI
 > go red.
 >
 > And one thing that is built and cuts against me: the k=3 consistency layer only

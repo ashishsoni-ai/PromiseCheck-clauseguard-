@@ -1,4 +1,4 @@
-﻿# Architecture, in one page
+# Architecture, in one page
 
 This file is the drawing brief for `docs/architecture.png`. It specifies what the
 image has to say, where every box goes, and which boxes must be drawn as
@@ -70,7 +70,7 @@ down through them, and each box carrying its exit condition on the right:
 | **L0** | `prefilter.py` â€” deterministic lexicon, no network | terminates on `denies` / `evasive`; **can never emit `grants`** |
 | **L1** | `judge.py` â€” 1 call, temp 0.0, must cite a clause and quote it | stance + `cited_clause_id` + `quoted_span` |
 | **L2** | `span_verify.py` â€” exact substring after normalisation | pass, or retry once, then abstain. *This is C2* |
-| **L3** | `consistency.py` â€” k=3 at temp 0.3, majority | over-promise cell only (LLM cross-check path exists but unexercised) |
+| **L3** | `consistency.py` — k=3 at temp 0.3, majority | over-promise cell only (gold-set path exists, κ = 0.612 measured) |
 
 L0 needs a short-circuit arrow that bypasses L1â€“L3 straight to column 4,
 annotated *10 of 30 rows in the live run, no network call*. Under the L3 box,
@@ -104,7 +104,7 @@ only dashed *line* that does not mean "unbuilt", so it is labelled in full.
 Three boxes must be dashed: `harness/web`,
 `harness/extract/extractor.py`, and `harness/probe_gen/`. `aut-strong` and
 `clauseguard check` are now built and solid. Two more absences are
-worth a footnote strip along the bottom rather than boxes of their own: the LLM cross-check labels (`tests/gold/gold_labels.jsonl` — κ is inter-LLM agreement, not judge accuracy) and `harness/metrics/`
+worth a footnote strip along the bottom rather than boxes of their own: the human gold labels (`tests/gold/gold_labels.jsonl` — 60 hand-labeled rows, κ = 0.612 vs judge; old 0.847 was LLM-vs-LLM and circular) and `harness/metrics/`
 (one-line stubs). The lockfiles in column 1 should carry the note *hand-authored
 by `scripts/author_rules.py` / `scripts/author_probes.py`* precisely because the
 generator boxes above them are dashed â€” otherwise a reader assumes the stubs

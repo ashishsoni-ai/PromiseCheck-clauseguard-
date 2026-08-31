@@ -105,12 +105,12 @@ text. Fail, retry once, then abstain. A stance whose evidence cannot be located
 is discarded whole rather than kept with a warning.
 
 **L3** is a k=3 majority vote at temperature 0.3, applied only to judgments
-landing on the over-promise cell and to the LLM cross-check set. It is deliberately
+landing on the over-promise cell and to the gold set. It is deliberately
 asymmetric: because only rows already in that cell get resampled, **L3 can lower
 the reported over-promise count and can never raise it.** The expensive treatment
 is aimed at the number the project most wants to be large. The mirror of that —
 a real over-promise the judge scored as a denial — is invisible to L3 by
-construction, and the only control for it is the LLM cross-check set, which does not exist yet.
+construction, and the only control for it is the gold set of 60 hand-labeled pairs.
 
 ## Run it
 
@@ -203,15 +203,19 @@ ones whose surface does not match their facts — which, as
 [`docs/results.md`](docs/results.md) records, is a defect the hand-written corpus
 already has in four places.
 
-**The LLM cross-check set, and therefore every judge-accuracy number.**
-`tests/gold/gold_labels.jsonl` is empty. DESIGN.md §4.2's reliability panel —
-Cohen's κ against 200 LLM cross-check labels, per-class precision and recall, the
-false-alarm rate, the L0-only baseline κ — is unmeasured, and no estimate of it
-appears anywhere in this repository. That is the most load-bearing absence after
-`aut-strong`: nothing here is a claim that the judge is *correct*, only a record
-of what it did, mechanically verified at every step where verification was
-possible. *What's next:* 200 LLM cross-check labels, and they must include refuse-then-commit
-shapes, because that is the exact flip L3 cannot see.
+**The gold set, and therefore every judge-accuracy number.**
+`tests/gold/gold_labels.jsonl` now holds 60 hand-labeled probe/response pairs
+(30 probes × 2 agents). DESIGN.md §4.2's reliability panel — Cohen's κ against
+gold labels, per-class precision and recall, the false-alarm rate — is measured
+in [`docs/results.md`](docs/results.md): pooled multi-class κ = 0.612,
+over-promise precision 0.923 (12/13) and recall 0.571 (12/21), false-alarm rate
+2.7% (1/37). The earlier κ of 0.847 was computed against LLM-generated
+"cross-check" labels and was circular — the labeling LLM and the judge shared a
+model family — so it is not comparable to the human-label number. The gold
+labels also exposed a judge blind spot: the human labels found more over-promises
+than the judge's live run (aut-naive 18/30 vs 11/30, aut-strong 5/30 vs 2/30).
+*What's next:* more gold labels, and they must include refuse-then-commit shapes,
+because that is the exact flip L3 cannot see.
 
 The 60-second dashboard (§5.2) is also unbuilt as a web page; its content ships
 as the CLI summary table instead, which was the cheaper way to get the same
@@ -267,7 +271,7 @@ aut-strong/    agent under test #2: built, frozen at aut-strong-v1; lower-bound 
 policies/      policy documents + .clauseguard/manifest.json clause hashes
 rules/         rules.lock.json - human-reviewed extracted rules
 probes/        probes.lock.json - version-controlled probe corpus
-tests/         unit / integration / LLM cross-check labels (set empty)
+tests/         unit / integration / gold labels (60 hand-labeled pairs)
 docs/          DESIGN.md (the spec), results.md (the numbers), limitations.md
 runs.db        append-only audit store; one row per probe per run
 ```
