@@ -108,7 +108,7 @@ remains hand-authored and reviewed by policy — the extracted output goes to
 `rules/rules.extracted.json` and is a comparison candidate, never a replacement.
 Two more absences are
 worth a footnote strip along the bottom rather than boxes of their own: the human gold labels (`tests/gold/gold_labels.jsonl` — 60 hand-labeled rows, κ = 0.612 vs judge; old 0.847 was LLM-vs-LLM and circular) and `harness/metrics/`
-(one-line stubs. The lockfiles in column 1 should carry the note *hand-authored
+(built: κ and confusion reproduce the published numbers from the gold labels; difficulty is wired but "not measured" until the verbatim-oracle agent of DESIGN.md 4.3 exists). The lockfiles in column 1 should carry the note *hand-authored
 by `scripts/author_rules.py` / `scripts/author_probes.py`*; the generators
 (`harness/extract`, `harness/probe_gen`) write comparison candidates
 (`rules.extracted.json` / `probes.generated.json`) and never touch the lockfiles.
