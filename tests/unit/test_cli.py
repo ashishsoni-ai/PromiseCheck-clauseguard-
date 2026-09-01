@@ -794,21 +794,32 @@ class TestPolicyResolution:
 # ==========================================================================
 # The surface DESIGN.md 1.8 advertises
 # ==========================================================================
-class TestTheUnimplementedSubcommandsRefuseLoudly:
-    """Unimplemented subcommands (generate) refuse loudly.
+class TestAllSubcommandsAreImplemented:
+    """All five DESIGN.md 1.8 subcommands are now implemented and registered.
 
-    `check`, `report` and `extract` are implemented and must not appear here.
+    `extract` and `generate` were the last two wired (see cmd_extract /
+    cmd_generate); nothing may refuse with "not implemented" any more.
     """
 
-    @pytest.mark.parametrize(
-        "argv",
-        [
-            ["generate", "--rules", "rules/rules.lock.json"],
-        ],
-    )
-    def test_they_exit_non_zero(self, argv, capsys):
-        assert main(argv) == EXIT_OPERATIONAL
-        assert "not implemented" in capsys.readouterr().err
+    def test_no_subcommand_is_unimplemented(self):
+        """`--help` must not describe a surface the build refuses to run."""
+        from harness.cli import build_parser
+
+        parser = build_parser()
+        cases = {
+            "extract": ["extract", "--policy", "policies/acme-refunds.md"],
+            "generate": ["generate"],
+            "run": ["run", "--agent", "http://localhost:8000"],
+            "check": ["check"],
+            "report": ["report"],
+        }
+        for name, argv in cases.items():
+            ns = parser.parse_args(argv)
+            func = getattr(ns, "func", None)
+            assert func is not None, f"clauseguard {name} has no func"
+            assert getattr(func, "__name__", "") != "cmd_unimplemented", (
+                f"clauseguard {name} still wired to cmd_unimplemented"
+            )
 
     def test_check_with_no_runs_reports_and_exits_zero(self, tmp_path):
         """`check` on an empty store prints a message and exits 0, not 1."""

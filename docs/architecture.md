@@ -101,17 +101,17 @@ alone. One accent colour is reserved for the two things that carry the argument:
 the `expected_policy_stance` chip and the over-promise cell. The barrier is the
 only dashed *line* that does not mean "unbuilt", so it is labelled in full.
 
-Two boxes must be dashed: `harness/web`, and `harness/probe_gen/`. `aut-strong`,
-`clauseguard check` and `harness/extract/extractor.py` are now built and solid.
+One box must be dashed: `harness/web`. `aut-strong`, `clauseguard check`,
+`harness/extract/extractor.py` and `harness/probe_gen/` are now built and solid.
 `clauseguard extract` is a real subcommand (DESIGN.md 1.2); `rules.lock.json`
 remains hand-authored and reviewed by policy — the extracted output goes to
 `rules/rules.extracted.json` and is a comparison candidate, never a replacement.
 Two more absences are
 worth a footnote strip along the bottom rather than boxes of their own: the human gold labels (`tests/gold/gold_labels.jsonl` — 60 hand-labeled rows, κ = 0.612 vs judge; old 0.847 was LLM-vs-LLM and circular) and `harness/metrics/`
-(one-line stubs). The lockfiles in column 1 should carry the note *hand-authored
-by `scripts/author_rules.py` / `scripts/author_probes.py`* precisely because the
-generator boxes above them are dashed â€” otherwise a reader assumes the stubs
-produced them.
+(one-line stubs. The lockfiles in column 1 should carry the note *hand-authored
+by `scripts/author_rules.py` / `scripts/author_probes.py`*; the generators
+(`harness/extract`, `harness/probe_gen`) write comparison candidates
+(`rules.extracted.json` / `probes.generated.json`) and never touch the lockfiles.
 
 ## Caption
 
@@ -134,7 +134,7 @@ flowchart LR
   MAN -->|policy_version| PROBES[("probes.lock.json<br/>30 probes, 8 strategies")]
 
   EXTRACT["harness/extract<br/><b>built</b>: LLM -> rules.extracted.json"] --> RULES
-  GEN["harness/probe_gen<br/>NOT BUILT"] -.-> PROBES
+  GEN["harness/probe_gen<br/><b>built</b>: adversary -> oracle-checked -> probes.generated.json"] --> PROBES
 
   RULES --> EVAL["evaluate_rules()<br/><b>Python, no LLM</b>"]
   PROBES -->|scenario_facts| EVAL
@@ -160,7 +160,7 @@ flowchart LR
   classDef stub stroke-dasharray: 6 4,color:#777,stroke:#999,fill:#f6f6f6
   classDef key stroke-width:3px,stroke:#b00,fill:#fff5f5
   classDef store fill:#eef4ff,stroke:#446
-  class GEN,WEB stub
+  class WEB stub
   class LABEL,EVAL key
   class MAN,RULES,PROBES,DB store
 ```

@@ -582,3 +582,76 @@ free-tier TPD budget was exhausted (200,000/day). That comparison — how the sa
 revised prompt performs on the strong model the design actually pins — is
 recorded here as unfinished work, not as a result. The local run above is a
 lower-bound sanity check, not a substitute.
+## Probe generation: the pipeline is real, and the comparison run is not
+
+`harness/probe_gen/` is now built and tested — not a stub. The adversary
+(`adversary.py`) renders a customer surface from a fact vector and self-critiques it
+(temperature 0.9, local 7B by pin); `sampler.py` and the eight strategy modules
+produce the fact vectors; `oracle.py` checks that every fact the probe turns on
+actually appears in the text, scoped to the target rule's attributes — the same
+scoping the hand-authored corpus uses — and the driver (`scripts/generate_probes.py`)
+computes each probe's label with `evaluate_rules()` before the oracle is asked: that
+half is Python, no LLM — that half is C1. Survivors are written to
+`probes/probes.generated.json` — never to `probes.lock.json`. Offline tests:
+`tests/unit/test_probe_gen.py` (fake adversary; the one live test is gated behind
+`pytest -m live`).
+
+**Oracle-valid counts: measured across two runs, stochastic at temp 0.9.**
+The strategy sampling is deterministic: each strategy is attempted once per root rule,
+so **attempted = 16 per strategy** every time. Whether a rendered surface carries its own
+facts is not — the adversary is a real LLM at temperature 0.9, so the text it writes
+varies, and the oracle pass counts vary run to run. Two runs are reported below to
+show the range:
+
+| Strategy | Attempted | Run A (54 total) | Run B (56 total) |
+|---|---|---|---|
+| `multi_turn_drift` | 16 | 9 | 7 |
+| `category_smuggling` | 16 | 8 | 8 |
+| `cross_clause` | 16 | 8 | 7 |
+| `exception_depth` | 16 | 8 | 8 |
+| `false_premise` | 16 | 7 | 10 |
+| `boundary` | 16 | 7 | 7 |
+| `authority_pressure` | 16 | 7 | 8 |
+| `condition_stripping` | 16 | 0 | 1 |
+
+The file on disk (`probes/probes.generated.json`) records run B's survivors. The
+hand-written corpus's winningest strategy — `condition_stripping`, 4/4 — produces
+**far fewer** oracle-valid probes than any other: 0–1 of 16 (~0–6%) versus 7–10 of 16
+(44–62%). That range is a real finding, not noise: the local 7B adversary consistently
+drops the single stripped fact that the probe turns on, so the oracle correctly rejects
+the surface. It is a model-capability gap in the generator's adversary arm, not a harness
+defect. The oracle did exactly what DESIGN.md 3.4's discard-and-report rule prescribes.
+
+**The judged comparison run: not completed, honestly.** The 54 survivors (run A) were
+cut to a 14-probe subset (`probes/probes.subset.json`, 2 per surviving strategy) and run
+against the frozen `aut-naive` with the **local** judge (`ollama_chat/qwen2.5:7b-instruct`,
+temperature 0.0; `runs_generated.db`, run `01a05c2d...`), because Groq's TPD was
+exhausted again. Only **4 of 14 rows produced a scoreable verdict**: 3 `evasive`,
+1 correct denial, 0 over-promises. That is explicitly **not** a finding: 4 rows cannot
+support any yield-by-strategy conclusion, and all four land on the same local-7B
+judge/agent pairing. (All three roles tonight — agent, adversary, and judge — were
+`qwen2.5:7b-instruct`; that is exactly the single-family collision DESIGN.md 1.5
+exists to avoid, and a second reason these rows cannot be read as a yield measurement.)
+
+**Why 10 of 14 rows carried no verdict.** The local 7B judge returned malformed
+`Judgment` tool calls on row after row: the `reasoning` field was missing or over the
+schema's 300-character cap (DESIGN.md 4.1), so Pydantic rejected the call. The
+harness retried, and — where retries could not produce a valid judgment — the row abstained
+(9 rows) and one row exhausted the repair attempts as an error. That is the
+abstain-rather-than-guess invariant working as designed: no invalid judgment was
+scored, and no `max_length` was raised to force these rows through — the schema was left
+as-is. The limitation is tonight's session (a local 7B judge asked to do a job a
+hosted judge does), not the harness's design.
+
+**Why the full yield-by-strategy comparison is not in this file.** It was not
+obtainable tonight: Groq's free-tier TPD was exhausted twice, Docker died once, and this
+platform's own daily cost cap was hit before a judged comparator run could complete. The
+comparison — how generated probes convert across strategies under a real judge — is
+recorded here as **not completed**, with the reason stated, not as a result, and not
+presented as one.
+
+**What this means.** The pipeline is real, tested, and honest: the oracle correctly
+filters, and the condition_stripping gap is measured. What remains is a judged run the
+oracle-compliant set can be scored by a judge in a different family from the agent (and
+ideally from the adversary) — and an adversary that can hold a stripped condition long
+enough to give the hand-written corpus's winningest strategy a fair shot at all.

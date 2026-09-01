@@ -71,9 +71,11 @@ an LLM.** A probe's natural-language *surface* — the customer's wording — ma
 generated. Its correct answer is computed by evaluating the extracted rule's
 conditions in Python. An LLM never decides whether a probe's expected answer is
 "grant" or "deny". This is what stops the whole thing being circular. (In this
-repository the surfaces are hand-written too; the generator is a stub. C1 is
-about which half is allowed to be a model's output, not about how many halves
-are.)
+repository the lockfile surfaces are still hand-written; a built generator -
+`harness/probe_gen` + `scripts/generate_probes.py` - writes an oracle-checked
+candidate set to `probes/probes.generated.json` and never touches `probes.lock.json`.
+C1 is about which half is allowed to be a model's output, not about how many
+halves are.)
 
 **C2 — The judge must quote a span that literally exists in the cited clause.**
 Exact-substring verification after normalisation. If the quote isn't in the
@@ -178,22 +180,27 @@ frame's argument values, and litellm takes `api_key` and `headers` as arguments.
 | 6 | Append-only audit store | done |
 | 7 | Vertical slice: `clauseguard run` | done; two live runs measured |
 | 7b | `clauseguard extract` (DESIGN.md 1.2) | done; real LLM pipeline to `rules/rules.extracted.json`; first comparison run measured — see `docs/results.md` |
+| 7c | Probe generation (`harness/probe_gen` + `scripts/generate_probes.py`) | done | 16 attempted per strategy × 8 strategies; 54–56 oracle-valid across two runs, written to `probes/probes.generated.json`; `condition_stripping` produces far fewer (0–1 of 16) than any other — see `docs/results.md` |
 | 8 | CI gate: `clauseguard check` + `clauseguard report` | done | `--max-overpromise` (absolute threshold) and `--baseline` (vs previous run); `--annotations` for GitHub Actions inline warnings; `clauseguard-report.md` written alongside audit store |
 
 Rules and probes were hand-authored, reviewed, and committed as lockfiles:
 16 rules over `acme-refunds`, and 30 probes covering all eight adversarial
 strategies and 15 of the policy's 20 clauses. `rules.lock.json` and
 `probes.lock.json` are treated exactly like dependency lockfiles — CI never does
-bulk generation, and `clauseguard generate` is the `npm install` you run
-deliberately.
+bulk generation, and `scripts/generate_probes.py` is the `npm install` you run
+deliberately — it writes an oracle-checked candidate set, never the lockfile.
 
 ## What is not built, and why
 
-One thing in DESIGN.md is missing. Listed here rather than left for a reviewer to notice.
+Two things in DESIGN.md are missing or incomplete. Listed here rather than left for a reviewer to notice.
 
-**Probe generation** is `clauseguard generate` stubs; the 30 probes in the lockfiles were written by hand. This is the least costly gap, because the design always intended human review to be the thing that makes a lockfile trustworthy — but it means the corpus is 30 probes rather than the 480 the dashboard mock shows. *What's next:* oracle-checking generated probes against `evaluate_rules()` and discarding the ones whose surface does not match their facts — which, as
-[`docs/results.md`](docs/results.md) records, is a defect the hand-written corpus
-already has in four places.
+**The judged yield-by-strategy comparison is not complete.** The generator is built
+and wired (`clauseguard generate` runs the real pipeline; `harness/probe_gen` +
+`scripts/generate_probes.py`, step 7c above), and `probes.lock.json` remains the
+hand-authored, reviewed resource the design intended. But the generated probes have
+not yet been scored by a judge in a different family from the agent, so the yield
+comparison that would confirm or contradict DESIGN.md §8's prediction is still open —
+see [`docs/results.md`](docs/results.md).
 
 **The gold set, and therefore every judge-accuracy number.**
 `tests/gold/gold_labels.jsonl` now holds 60 hand-labeled probe/response pairs
