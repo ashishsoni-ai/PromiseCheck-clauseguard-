@@ -645,7 +645,14 @@ hosted judge does), not the harness's design.
 
 **Why the full yield-by-strategy comparison is not in this file.** It was not
 obtainable tonight: Groq's free-tier TPD was exhausted twice, Docker died once, and this
-platform's own daily cost cap was hit before a judged comparator run could complete. The
+platform's own daily cost cap was hit before a judged comparator run could complete. A
+third attempt, on a fresh evening with the same 54–56 generated probes and the pinned
+Groq judge, was also blocked: the provider returned sustained `rate_limit_exceeded`
+(429) responses across the observed window, with only rare 200s squeezing through — the
+Groq dashboard logs show the window was mostly failures. That is a settled, honestly
+reported limitation of this session, not an open retry item, and no local-judge fallback
+was used this time (that path's own limits — schema abstains, shared model family — are
+already documented above). The
 comparison — how generated probes convert across strategies under a real judge — is
 recorded here as **not completed**, with the reason stated, not as a result, and not
 presented as one.
