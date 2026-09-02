@@ -89,9 +89,10 @@ side, small print* â€” showing the headline in large type:
 OVER-PROMISES: 11 / 30
 ```
 
-And from `runs.db`, two dashed arrows to greyed boxes: `clauseguard check` â€” *the
-gate; exists, refuses to run* â€” and `harness/web` â€” *the 60-second dashboard, not
-built*.
+And from `runs.db`, two arrows: `clauseguard check` â€” *the
+gate; built* â€” and `harness/web` â€” *the summary dashboard, built (minimal:
+the single-route HTML summary; the diff view and review queue designed by
+DESIGN.md 1.7 are deferred, and the stubs in web/routes/ say so in words)*.
 
 ## Visual conventions
 
@@ -101,12 +102,17 @@ alone. One accent colour is reserved for the two things that carry the argument:
 the `expected_policy_stance` chip and the over-promise cell. The barrier is the
 only dashed *line* that does not mean "unbuilt", so it is labelled in full.
 
-One box must be dashed: `harness/web`. `aut-strong`, `clauseguard check`,
-`harness/extract/extractor.py` and `harness/probe_gen/` are now built and solid.
-`clauseguard extract` is a real subcommand (DESIGN.md 1.2); `rules.lock.json`
+No box must be dashed: `aut-strong`, `clauseguard check`,
+`harness/extract/extractor.py`, `harness/probe_gen/` and `harness/web/` are all
+built and solid. `clauseguard extract` is a real subcommand (DESIGN.md 1.2);
+`rules.lock.json`
 remains hand-authored and reviewed by policy — the extracted output goes to
 `rules/rules.extracted.json` and is a comparison candidate, never a replacement.
-Two more absences are
+`harness/web` is a minimal dashboard: one FastAPI route serving the same summary
+`clauseguard run` prints (over-promise count, 2×3 matrix, small print). DESIGN.md
+1.7's full spec — the diff view and the rule review queue — is deferred; the CLI
+serves that content, and the stubs in `web/routes/diff.py` and `web/routes/review.py`
+say so in words. Two more absences are
 worth a footnote strip along the bottom rather than boxes of their own: the human gold labels (`tests/gold/gold_labels.jsonl` — 60 hand-labeled rows, κ = 0.612 vs judge; old 0.847 was LLM-vs-LLM and circular) and `harness/metrics/`
 (built: κ and confusion reproduce the published numbers from the gold labels; difficulty is wired but "not measured" until the verbatim-oracle agent of DESIGN.md 4.3 exists). The lockfiles in column 1 should carry the note *hand-authored
 by `scripts/author_rules.py` / `scripts/author_probes.py`*; the generators
@@ -155,12 +161,11 @@ flowchart LR
   ROW --> DB[("runs.db<br/>append-only")]
   DB --> CLI["clauseguard run<br/><b>OVER-PROMISES: 11 / 30</b>"]
   DB --> GATE["clauseguard check<br/>exit 0/1, --max-overpromise<br/>--baseline, --annotations"]
-  DB -.-> WEB["harness/web dashboard<br/>NOT BUILT"]
+  DB --> WEB["harness/web<br/>summary dashboard<br/>built (minimal)"]
 
   classDef stub stroke-dasharray: 6 4,color:#777,stroke:#999,fill:#f6f6f6
   classDef key stroke-width:3px,stroke:#b00,fill:#fff5f5
   classDef store fill:#eef4ff,stroke:#446
-  class WEB stub
   class LABEL,EVAL key
   class MAN,RULES,PROBES,DB store
 ```

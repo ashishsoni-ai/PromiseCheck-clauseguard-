@@ -1,1 +1,42 @@
-<!-- dashboard.html - server-rendered Jinja2 + HTMX (DESIGN.md 1.7). Later step. -->
+{% extends "base.html" %}
+{% block title %}Clauseguard — run summary{% endblock %}
+{% block content %}
+<h1>Clauseguard run summary</h1>
+<p class="mute">The same numbers <code>clauseguard run</code> prints, rendered as HTML.</p>
+
+{% if not has_run %}
+  <p>{{ message }}</p>
+{% else %}
+  <p>run <code>{{ run_id }}</code></p>
+
+  <h2>OVER-PROMISES: {{ over_promises }} / {{ attempted }}</h2>
+  <p>
+    UNDER-SERVE: {{ under_serves }} &middot;
+    EVASIVE: {{ evasive }} &middot;
+    JUDGE ABSTAINED: {{ abstained }}
+  </p>
+
+  <h3>Matrix</h3>
+  <table>
+    <tr><th>policy \ agent</th><th>grants</th><th>denies</th><th>evasive</th></tr>
+    {% for policy in ("grants", "denies") %}
+      <tr>
+        <th>{{ policy }}</th>
+        {% for agent in ("grants", "denies", "evasive") %}
+          {% set cell = matrix | selectattr("policy_stance", "equalto", policy)
+                                | selectattr("agent_stance", "equalto", agent)
+                                | list | first %}
+          <td class="{{ 'over' if cell.is_over_promise and cell.count > 0 else '' }}">
+            {{ cell.count }}
+          </td>
+        {% endfor %}
+      </tr>
+    {% endfor %}
+  </table>
+
+  {% if unscored %}
+    <p class="mute">{{ unscored }} row(s) are in no cell
+      ({{ abstained }} abstained, {{ errored }} errored).</p>
+  {% endif %}
+{% endif %}
+{% endblock %}

@@ -182,6 +182,7 @@ frame's argument values, and litellm takes `api_key` and `headers` as arguments.
 | 7b | `clauseguard extract` (DESIGN.md 1.2) | done; real LLM pipeline to `rules/rules.extracted.json`; first comparison run measured — see `docs/results.md` |
 | 7c | Probe generation (`harness/probe_gen` + `scripts/generate_probes.py`) | done | 16 attempted per strategy × 8 strategies; 54–56 oracle-valid across two runs, written to `probes/probes.generated.json`; `condition_stripping` produces far fewer (0–1 of 16) than any other — see `docs/results.md` |
 | 7d | Reliability metrics (`harness/metrics/`) | done | κ and confusion reproduce the published numbers (κ=0.612, precision 0.923, recall 0.571, FA 2.7%) from `tests/gold/gold_labels.jsonl`; difficulty is wired but "not measured" until the verbatim-oracle agent (DESIGN.md 4.3) exists |
+| 7e | Minimal web dashboard (`harness/web/`) | done | one FastAPI route serving the same summary `clauseguard run` prints (over-promise count, 2×3 matrix, small print); DESIGN.md 1.7's diff view and review queue deferred — the CLI serves that content |
 | 8 | CI gate: `clauseguard check` + `clauseguard report` | done | `--max-overpromise` (absolute threshold) and `--baseline` (vs previous run); `--annotations` for GitHub Actions inline warnings; `clauseguard-report.md` written alongside audit store |
 
 Rules and probes were hand-authored, reviewed, and committed as lockfiles:
@@ -217,9 +218,11 @@ than the judge's live run (aut-naive 18/30 vs 11/30, aut-strong 5/30 vs 2/30).
 *What's next:* more gold labels, and they must include refuse-then-commit shapes,
 because that is the exact flip L3 cannot see.
 
-The 60-second dashboard (§5.2) is also unbuilt as a web page; its content ships
-as the CLI summary table instead, which was the cheaper way to get the same
-numbers in front of a reviewer.
+The full DESIGN.md §1.7 dashboard (§5.2) is not built as a full web page; a minimal
+summary dashboard is (`harness/web/` — one route rendering what the CLI prints),
+and the diff view and review queue remain deferred because the CLI already serves
+that content, which was the cheaper way to get the same numbers in front of a
+reviewer.
 
 ## Limitations
 
