@@ -45,3 +45,5 @@ aut-strong/.index/
 # OS
 Thumbs.db
 .DS_Store
+
+runs_generated.db
