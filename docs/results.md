@@ -423,7 +423,7 @@ judge answers in about 0.9s.
 | False-alarm rate | 5–9% | **2.3%** (1/44) | measured — 1 of 44 non-over-promise rows flagged |
 | Judge abstain rate | 3–6% | 0% | measured, but pre-resample; expect higher |
 | Probe validity (oracle pass rate) | ≥95% | — | unmeasured, and a defect it would have caught is recorded below |
-| Rule extraction coverage | 70–85% | — | not applicable; rules were hand-authored |
+| Rule extraction coverage | 70–85% | **45.0%** (9/20) | measured — one comparison extraction run (local adversary model, below band; `rules.lock.json` remains hand-authored) |
 | Over-promise rate, `aut-naive` | 8–20% | **36.7%** (11/30) | measured, above band |
 | Over-promise rate, `aut-strong` | 1–6% | **6.7%** (2/30) | measured, lower bound — see caveat |
 | Under-serve rate | report it | 0 of 6 | measured |
@@ -623,9 +623,10 @@ the surface. It is a model-capability gap in the generator's adversary arm, not 
 defect. The oracle did exactly what DESIGN.md 3.4's discard-and-report rule prescribes.
 
 **The judged comparison run: not completed, honestly.** The 54 survivors (run A) were
-cut to a 14-probe subset (`probes/probes.subset.json`, 2 per surviving strategy) and run
+cut to a 14-probe subset (2 per surviving strategy) and run
 against the frozen `aut-naive` with the **local** judge (`ollama_chat/qwen2.5:7b-instruct`,
-temperature 0.0; `runs_generated.db`, run `01a05c2d...`), because Groq's TPD was
+temperature 0.0; run `01a05c2d...`, run against a scratch `runs_generated.db` that has
+since been removed), because Groq's TPD was
 exhausted again. Only **4 of 14 rows produced a scoreable verdict**: 3 `evasive`,
 1 correct denial, 0 over-promises. That is explicitly **not** a finding: 4 rows cannot
 support any yield-by-strategy conclusion, and all four land on the same local-7B

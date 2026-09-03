@@ -112,7 +112,7 @@ remains hand-authored and reviewed by policy — the extracted output goes to
 `clauseguard run` prints (over-promise count, 2×3 matrix, small print). DESIGN.md
 1.7's full spec — the diff view and the rule review queue — is deferred; the CLI
 serves that content, and the stubs in `web/routes/diff.py` and `web/routes/review.py`
-say so in words. Two more absences are
+say so in words. Two more facts are
 worth a footnote strip along the bottom rather than boxes of their own: the human gold labels (`tests/gold/gold_labels.jsonl` — 60 hand-labeled rows, κ = 0.612 vs judge; old 0.847 was LLM-vs-LLM and circular) and `harness/metrics/`
 (built: κ and confusion reproduce the published numbers from the gold labels; difficulty is wired but "not measured" until the verbatim-oracle agent of DESIGN.md 4.3 exists). The lockfiles in column 1 should carry the note *hand-authored
 by `scripts/author_rules.py` / `scripts/author_probes.py`*; the generators

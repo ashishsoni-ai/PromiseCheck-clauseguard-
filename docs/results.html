@@ -1122,6 +1122,12 @@ t disagreement about a number like this is really disagreement about its denomin
       not exist yet, and they say NOT BUILT in words so the line style is never the only signal.
       <a href="architecture.png">Open the diagram at full size</a> to read the annotations.
       <br>
+      <strong>Drawing vintage:</strong> the PNG predates the last build-out. Since it was drawn,
+      the rule-review gate, `harness/extract`, `harness/probe_gen`, `harness/metrics` and the minimal
+      web dashboard have all been built — the boxes it still labels NOT BUILT now exist, and
+      `docs/architecture.md` (the drawing brief, kept current) is the authoritative statement of what
+      is and is not built. The Mermaid version there renders today's state.
+      <br>
       Two figures in the drawing are not on the rest of this page: the manifest holds
       <strong>20</strong> clauses, of which the probes cover the 15 that results.md reports, and L3
       resamples at temperature <strong>0.3</strong>. Both trace to the repository rather than to
@@ -1369,12 +1375,12 @@ t disagreement about a number like this is really disagreement about its denomin
 <section class="cg-sec" aria-labelledby="s8">
   <div class="cg-wrap cg-wrap--wide">
     <div class="cg-eyebrow">
-      <span class="cg-chip cg-chip--measured">7 of 11 measured</span>
+      <span class="cg-chip cg-chip--measured">9 of 11 measured</span>
       <span>Against DESIGN.md §8's scoreboard</span>
       <span class="cg-eyebrow__rule" aria-hidden="true"></span>
     </div>
 
-    <h2 class="cg-h2" id="s8">Seven of eleven measured. That ratio is the honest summary.</h2>
+    <h2 class="cg-h2" id="s8">Nine of eleven measured. That ratio is the honest summary.</h2>
     <p class="cg-lede">The mechanism works end to end and produced a real finding, and most of the
       reliability apparatus that would let someone else trust the finding is specified, partly
       implemented, and unmeasured.</p>
@@ -1420,11 +1426,11 @@ t disagreement about a number like this is really disagreement about its denomin
             <td class="cg-score__dash">—</td>
             <td class="cg-score__status">unmeasured, and a defect it would have caught is recorded above</td>
           </tr>
-          <tr class="is-unmeasured">
+          <tr class="is-measured">
             <td class="cg-score__metric">Rule extraction coverage</td>
             <td>70–85%</td>
-            <td class="cg-score__dash">—</td>
-            <td class="cg-score__status">not applicable; rules were hand-authored</td>
+            <td class="cg-score__val">45.0% (9/20)</td>
+            <td class="cg-score__status">measured — one comparison extraction run (local adversary model, below band); rules.lock.json remains hand-authored</td>
           </tr>
           <tr class="is-measured">
             <td class="cg-score__metric">Over-promise rate, aut-naive</td>

@@ -158,8 +158,8 @@ so a run with eleven candidates should be expected to take substantially longer.
 The tests are offline and deterministic by default:
 
 ```bash
-pytest                      # 1,223 offline tests
-pytest -m live --tb=short   # 2 tests that hit the real judge
+pytest                      # 1,420 offline tests
+pytest -m live --tb=short   # 5 tests that hit a real provider
 ```
 
 Use `--tb=short` for the live ones. The default long traceback prints each
@@ -226,7 +226,7 @@ reviewer.
 
 ## Limitations
 
-Seven entries in [`docs/limitations.md`](docs/limitations.md), stated up front
+Ten entries in [`docs/limitations.md`](docs/limitations.md), stated up front
 rather than discovered by a reviewer. The four that change how the results should
 be read:
 
